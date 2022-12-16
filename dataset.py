@@ -39,6 +39,8 @@ class MolerData(Data):
             return self.x.size(0)
         if key == "correct_attachment_point_choice":
             return self.valid_attachment_point_choices.size(0)
+        if key == "valid_attachment_point_choices":
+            return self.x.size(0)
         if key == "valid_edge_choices":
             return self.x.size(0)
         else:

@@ -28,8 +28,13 @@ class MLPDecoder(torch.nn.Module):
         )
         self._edge_candidate_scorer = GenericMLP(**params["edge_candidate_scorer"])
         self._edge_type_selector = GenericMLP(**params["edge_type_selector"])
+        # since we want to truncate the distance, we should have an embedding layer for it
+        self._distance_embedding_layer = torch.nn.Embedding(distance_truncation, 1)
 
         # Attachment Point Selection
+        self._attachment_point_selector = GenericMLP(
+            **params["attachment_point_selector"]
+        )
 
     def pick_node_type(
         self,
@@ -144,10 +149,7 @@ class MLPDecoder(torch.nn.Module):
             torch.ones(len(candidate_edge_features)) * (distance_truncation - 1),
         )  # shape: [CE]
 
-        # since we want to truncate the distance, we should have an embedding layer for it
-        distance_embedding_layer = torch.nn.Embedding(distance_truncation, 1)
-
-        distance_embedding = distance_embedding_layer(truncated_distances.long())
+        distance_embedding = self._distance_embedding_layer(truncated_distances.long())
 
         # Concatenate all the node features, to form focus_node -> target_node edge features
         edge_candidate_representation = torch.cat(
@@ -261,25 +263,127 @@ class MLPDecoder(torch.nn.Module):
 
         return edge_loss
 
-    def compute_decoder_loss(self, node_type_logits, node_type_multihot_labels):
+    def pick_attachment_point(
+        self,
+        input_molecule_representations,  # as is
+        partial_graph_representions,  # partial_graph_representions
+        node_representations,  # as is
+        node_to_graph_map,  # batch.batch
+        candidate_attachment_points,  # valid_attachment_point_choices
+    ):
+        original_and_calculated_graph_representations = torch.cat(
+            [input_molecule_representations, partial_graph_representions],
+            axis=-1,
+        )  # Shape: [PG, MD + PD]
+
+        # Map attachment point candidates to their respective partial graphs.
+        partial_graphs_for_attachment_point_choices = node_to_graph_map[
+            candidate_attachment_points
+        ]  # Shape: [CA]
+
+        # To score an attachment point, we condition on the representations of input and partial
+        # graphs, along with the representation of the attachment point candidate in question.
+        attachment_point_representations = torch.cat(
+            [
+                original_and_calculated_graph_representations[
+                    partial_graphs_for_attachment_point_choices
+                ],
+                node_representations[candidate_attachment_points],
+            ],
+            axis=-1,
+        )  # Shape: [CA, MD + PD + VD*(num_layers+1)]
+
+        attachment_point_selection_logits = torch.squeeze(
+            self._attachment_point_selector(attachment_point_representations), axis=-1
+        )
+
+        return attachment_point_selection_logits
+
+    def compute_attachment_point_selection_loss(
+        self,
+        attachment_point_selection_logits,  # as is
+        attachment_point_candidate_to_graph_map,  # = batch2.valid_attachment_point_choices_batch.long(),
+        attachment_point_correct_choices,  # = batch2.correct_attachment_point_choices
+    ):
+        # Compute log softmax of the logits within each partial graph.
+        attachment_point_candidate_logprobs = (
+            traced_unsorted_segment_log_softmax(
+                logits=attachment_point_selection_logits,
+                segment_ids=attachment_point_candidate_to_graph_map,
+            )
+            * 1.0
+        )  # Shape: [CA]
+
+        attachment_point_correct_choice_neglogprobs = (
+            -attachment_point_candidate_logprobs[attachment_point_correct_choices]
+        )
+        # Shape: [AP]
+
+        attachment_point_selection_loss = safe_divide_loss(
+            (attachment_point_correct_choice_neglogprobs).sum(),
+            attachment_point_correct_choice_neglogprobs.shape[0],
+        )
+        return attachment_point_selection_loss
+
+    def compute_decoder_loss(
+        self,
+        # node selection
+        node_type_logits,
+        node_type_multihot_labels,
+        # edge selection
+        num_graphs_in_batch,
+        node_to_graph_map,
+        candidate_edge_targets,
+        edge_candidate_logits,
+        per_graph_num_correct_edge_choices,
+        edge_candidate_correctness_labels,
+        no_edge_selected_labels,
+        # attachement point
+        attachment_point_selection_logits,  # as is
+        attachment_point_candidate_to_graph_map,  # = batch2.valid_attachment_point_choices_batch.long(),
+        attachment_point_correct_choices,
+    ):
         # Compute node selection loss
         node_selection_loss = self.compute_node_type_selection_loss(
             node_type_logits, node_type_multihot_labels
         )
 
         # Compute edge selection loss
+        edge_loss = self.compute_edge_candidate_selection_loss(
+            num_graphs_in_batch,
+            node_to_graph_map,
+            candidate_edge_targets,
+            edge_candidate_logits,
+            per_graph_num_correct_edge_choices,
+            edge_candidate_correctness_labels,
+            no_edge_selected_labels,
+        )
 
         # Compute attachement point selection loss
+        attachment_point_loss = self.compute_attachment_point_selection_loss(
+            attachment_point_selection_logits,  # as is
+            attachment_point_candidate_to_graph_map,  # = batch2.valid_attachment_point_choices_batch.long(),
+            attachment_point_correct_choices,
+        )
 
         # Weighted sum of the losses and return it for backpropagation in
         # the lightning module
-        return node_selection_loss
+        return node_selection_loss + edge_loss + attachment_point_loss
 
     def forward(
         self,
         input_molecule_representations,
         graph_representations,
         graphs_requiring_node_choices,
+        # edge selection
+        node_representations,
+        num_graphs_in_batch,
+        graph_to_focus_node_map,
+        node_to_graph_map,
+        candidate_edge_targets,
+        candidate_edge_features,
+        # attachment selection
+        candidate_attachment_points,
     ):
         # Compute node logits
         node_logits = self.pick_node_type(
@@ -289,8 +393,28 @@ class MLPDecoder(torch.nn.Module):
         )
 
         # Compute edge logits
-
+        edge_candidate_logits, edge_type_logits = self.pick_edge(
+            input_molecule_representations,
+            graph_representations,
+            node_representations,
+            num_graphs_in_batch,
+            graph_to_focus_node_map,
+            node_to_graph_map,
+            candidate_edge_targets,
+            candidate_edge_features,
+        )
         # Compute attachment point logits
-
+        attachment_point_selection_logits = self.pick_attachment_point(
+            input_molecule_representations,  # as is
+            graph_representations,  # partial_graph_representions
+            node_representations,  # as is
+            node_to_graph_map,
+            candidate_attachment_points,
+        )
         # return all logits
-        return node_logits
+        return (
+            node_logits,
+            edge_candidate_logits,
+            edge_type_logits,
+            attachment_point_selection_logits,
+        )
