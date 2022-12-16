@@ -7,7 +7,42 @@ import gzip
 import pickle
 
 import sys
-sys.path.append('../moler_reference')
+
+sys.path.append("../moler_reference")
+
+
+class MolerData(Data):
+    """To ensure that both the original graph and the partial graph edge indices are incremented."""
+
+    def __init__(
+        self,
+        x=None,
+        edge_index=None,
+        edge_attr=None,
+        y=None,
+        pos=None,
+        original_graph_edge_index=None,
+        original_graph_x=None,
+        valid_attachment_point_choices = None,
+        **kwargs,
+    ):
+        super().__init__(x, edge_index, edge_attr, y, pos, **kwargs)
+        self.x = x
+        self.original_graph_edge_index = original_graph_edge_index
+        self.original_graph_x = original_graph_x
+        self.valid_attachment_point_choices = valid_attachment_point_choices
+
+    def __inc__(self, key, value, *args, **kwargs):
+        if key == "original_graph_edge_index":
+            return self.original_graph_x.size(0)
+        if key == "focus_node":
+            return self.x.size(0)
+        if key == "correct_attachment_point_choice":
+            return self.valid_attachment_point_choices.size(0)
+        if key == "valid_edge_choices":
+            return self.x.size(0)
+        else:
+            return super().__inc__(key, value, *args, **kwargs)
 
 
 def get_motif_type_to_node_type_index_map(motif_vocabulary, num_atom_types):
@@ -311,7 +346,7 @@ class MolerDataset(Dataset):
 
         molecule_gen_steps = self._to_tensor_moler(molecule_gen_steps)
 
-        return [Data(**step) for step in molecule_gen_steps]
+        return [MolerData(**step) for step in molecule_gen_steps]
 
     def _to_tensor_moler(self, molecule_gen_steps):
         for i in range(len(molecule_gen_steps)):

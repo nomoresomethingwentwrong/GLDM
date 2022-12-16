@@ -34,12 +34,12 @@ def compute_neglogprob_for_multihot_objective(
 def traced_unsorted_segment_log_softmax(
     logits,  # edge_candidate_logits
     segment_ids,  # edge_candidate_to_graph_map
-    num_segments,  # num_graphs_in_batch
 ):
     """Basically compute the log softmax for an array that contains a mix of a few different
     groups of logits. The final result is that log softmax is applied to each individual group
     of logits."""
     max_per_segment = scatter(logits, segment_ids, reduce="max")
+
     scattered_maxes = max_per_segment[segment_ids]
     recentered_scores = logits - scattered_maxes
     exped_recentered_scores = torch.exp(recentered_scores)
