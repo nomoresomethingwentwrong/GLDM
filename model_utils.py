@@ -2,6 +2,17 @@ import torch
 from torch.nn import Linear, LeakyReLU, Dropout
 from torch_geometric.nn import RGATConv
 from torch_geometric.nn import aggr
+from dataclasses import dataclass
+
+
+@dataclass
+class MoLeROutput:
+    node_type_logits: torch.Tensor
+    edge_candidate_logits: torch.Tensor
+    edge_type_logits: torch.Tensor
+    attachment_point_selection_logits: torch.Tensor
+    p: torch.Tensor
+    q: torch.Tensor
 
 
 class GenericGraphEncoder(torch.nn.Module):
@@ -62,7 +73,6 @@ class GenericGraphEncoder(torch.nn.Module):
 class GenericMLP(torch.nn.Module):
     """
     Generic MLP with dropout layers.
-    TODO: add
     """
 
     def __init__(

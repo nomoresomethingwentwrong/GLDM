@@ -5,9 +5,9 @@ from utils import (
     traced_unsorted_segment_log_softmax,
 )
 from model_utils import GenericMLP
-
-
+import torch.nn.functional as F
 distance_truncation = 10
+BIG_NUMBER = 1e7
 
 
 class MLPDecoder(torch.nn.Module):
@@ -28,6 +28,7 @@ class MLPDecoder(torch.nn.Module):
         )
         self._edge_candidate_scorer = GenericMLP(**params["edge_candidate_scorer"])
         self._edge_type_selector = GenericMLP(**params["edge_type_selector"])
+        self._cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction="none")
         # since we want to truncate the distance, we should have an embedding layer for it
         self._distance_embedding_layer = torch.nn.Embedding(distance_truncation, 1)
 
@@ -263,6 +264,42 @@ class MLPDecoder(torch.nn.Module):
 
         return edge_loss
 
+    def compute_edge_type_selection_loss(
+        self,
+        valid_edge_types,  # batch.valid_edge_types
+        edge_type_logits,
+        correct_edge_choices,  # batch.correct_edge_choices
+        edge_type_onehot_labels,  # batch.correct_edge_types
+    ):
+        correct_target_indices = correct_edge_choices != 0
+        edge_type_logits_for_correct_edges = edge_type_logits[correct_target_indices]
+
+        # The `valid_edge_types` tensor is equal to 1 when the edge is valid (it may be invalid due
+        # to valency constraints), 0 otherwise.
+        # We want to multiply the selection probabilities by this mask. Because the logits are in
+        # log space, we instead subtract a large value from the logits wherever this mask is zero.
+        scaled_edge_mask = (
+            1 - valid_edge_types.float()
+        ) * BIG_NUMBER  # Shape: [CCE, ET]
+        masked_edge_type_logits = (
+            edge_type_logits_for_correct_edges - scaled_edge_mask
+        )  # Shape: [CCE, ET]
+        edge_type_loss = softmax_cross_entropy_with_logits(
+            masked_edge_type_logits,
+            edge_type_onehot_labels.float(),
+        )
+        print(edge_type_logits_for_correct_edges)
+        print(edge_type_onehot_labels)
+        print(masked_edge_type_logits)
+        # Normalise by the number of edges for which we needed to pick a type:
+        # instead of mean, we must use safe divide because the batch can have zero edges
+        # requring edge types
+        edge_type_loss = safe_divide_loss(
+            torch.sum(edge_type_loss), len(edge_type_loss)
+        )
+        print(edge_type_loss)
+        return edge_type_loss
+
     def pick_attachment_point(
         self,
         input_molecule_representations,  # as is
@@ -338,6 +375,11 @@ class MLPDecoder(torch.nn.Module):
         per_graph_num_correct_edge_choices,
         edge_candidate_correctness_labels,
         no_edge_selected_labels,
+        # edge type selection
+        correct_edge_choices,
+        valid_edge_types,
+        edge_type_logits,
+        edge_type_onehot_labels,
         # attachement point
         attachment_point_selection_logits,  # as is
         attachment_point_candidate_to_graph_map,  # = batch2.valid_attachment_point_choices_batch.long(),
@@ -359,6 +401,12 @@ class MLPDecoder(torch.nn.Module):
             no_edge_selected_labels,
         )
 
+        edge_type_loss = self.compute_edge_type_selection_loss(
+            correct_edge_choices,
+            valid_edge_types,
+            edge_type_logits,
+            edge_type_onehot_labels,
+        )
         # Compute attachement point selection loss
         attachment_point_loss = self.compute_attachment_point_selection_loss(
             attachment_point_selection_logits,  # as is
@@ -368,7 +416,7 @@ class MLPDecoder(torch.nn.Module):
 
         # Weighted sum of the losses and return it for backpropagation in
         # the lightning module
-        return node_selection_loss + edge_loss + attachment_point_loss
+        return node_selection_loss + edge_loss + edge_type_loss + attachment_point_loss
 
     def forward(
         self,
@@ -418,3 +466,8 @@ class MLPDecoder(torch.nn.Module):
             edge_type_logits,
             attachment_point_selection_logits,
         )
+
+
+def softmax_cross_entropy_with_logits(logits, targets, reduce="none"):
+    if reduce == "none":
+        return -targets * F.log_softmax(logits, -1)
