@@ -2,7 +2,7 @@ import sys
 
 sys.path.append("../moler_reference")
 from molecule_generation.utils.training_utils import get_class_balancing_weights
-from pytorch_lightning import LightningModule, Trainer, seed_everything
+from pytorch_lightning import LightningModule
 from model_utils import GenericGraphEncoder, GenericMLP, MoLeROutput
 from encoder import GraphEncoder
 
@@ -121,12 +121,21 @@ class BaseModel(LightningModule):
         return p, q, z
 
     def forward(self, batch):
+        moler_output = self._run_step(batch)
+        return (
+            moler_output.node_type_logits,
+            moler_output.edge_candidate_logits,
+            moler_output.edge_type_logits,
+            moler_output.attachment_point_selection_logits,
+        )
+
+    def _run_step(self, batch):
         # Obtain graph level representation of original molecular graph
         input_molecule_representations = self.full_graph_encoder(
             original_graph_node_categorical_features=batch.original_graph_node_categorical_features,
             node_features=batch.original_graph_x.float(),
             edge_index=batch.original_graph_edge_index,
-            edge_type=batch.original_graph_edge_type,
+            edge_type=batch.original_graph_edge_type.int(),
             batch_index=batch.original_graph_x_batch,
         )
 
@@ -134,7 +143,7 @@ class BaseModel(LightningModule):
         partial_graph_representions, node_representations = self.partial_graph_encoder(
             node_features=batch.x,
             edge_index=batch.edge_index.long(),
-            edge_type=batch.edge_type,
+            edge_type=batch.edge_type.int(),
             batch_index=batch.batch,
         )
 
@@ -185,6 +194,7 @@ class BaseModel(LightningModule):
         loss = self.decoder.compute_decoder_loss(
             node_type_logits=moler_output.node_type_logits,
             node_type_multihot_labels=node_type_multihot_labels,
+            # edge selection
             num_graphs_in_batch=len(batch.ptr) - 1,
             node_to_graph_map=batch.batch,
             candidate_edge_targets=batch.valid_edge_choices[:, 1].long(),
@@ -192,7 +202,48 @@ class BaseModel(LightningModule):
             per_graph_num_correct_edge_choices=batch.num_correct_edge_choices,
             edge_candidate_correctness_labels=batch.correct_edge_choices,
             no_edge_selected_labels=batch.stop_node_label,
+            # edge type selection
+            correct_edge_choices=batch.correct_edge_choices,
+            valid_edge_types=batch.valid_edge_types,
+            edge_type_logits=moler_output.edge_type_logits,
+            edge_type_onehot_labels=batch.correct_edge_types,
+            # attachement point
             attachment_point_selection_logits=moler_output.attachment_point_selection_logits,
             attachment_point_candidate_to_graph_map=batch.valid_attachment_point_choices_batch.long(),
             attachment_point_correct_choices=batch.correct_attachment_point_choice.long(),
         )
+
+        return loss
+
+    def step(self, batch):
+        moler_output = self._run_step(batch)
+
+        decoder_loss = self.compute_loss(moler_output=moler_output, batch=batch)
+
+        kl = torch.distributions.kl_divergence(moler_output.q, moler_output.p)
+        kl = kl.mean()
+        # kl *= self.kl_coeff
+
+        loss = kl + decoder_loss
+
+        logs = {
+            "decoder_loss": decoder_loss,
+            "kl": kl,
+            "loss": loss,
+        }
+        return loss, logs
+
+    def training_step(self, batch, batch_idx):
+        loss, logs = self.step(batch)
+        self.log_dict(
+            {f"train_{k}": v for k, v in logs.items()}, on_step=True, on_epoch=False
+        )
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        loss, logs = self.step(batch)
+        self.log_dict({f"val_{k}": v for k, v in logs.items()})
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=1e-3)

@@ -6,8 +6,15 @@ from utils import (
 )
 from model_utils import GenericMLP
 import torch.nn.functional as F
+
 distance_truncation = 10
 BIG_NUMBER = 1e7
+
+
+def softmax_cross_entropy_with_logits(logits, targets, reduce="none"):
+    """Pytorch analogue for tf.nn.softmax_cross_entropy_with_logits."""
+    if reduce == "none":
+        return -targets * F.log_softmax(logits, -1)
 
 
 class MLPDecoder(torch.nn.Module):
@@ -288,16 +295,14 @@ class MLPDecoder(torch.nn.Module):
             masked_edge_type_logits,
             edge_type_onehot_labels.float(),
         )
-        print(edge_type_logits_for_correct_edges)
-        print(edge_type_onehot_labels)
-        print(masked_edge_type_logits)
+
         # Normalise by the number of edges for which we needed to pick a type:
         # instead of mean, we must use safe divide because the batch can have zero edges
         # requring edge types
         edge_type_loss = safe_divide_loss(
             torch.sum(edge_type_loss), len(edge_type_loss)
         )
-        print(edge_type_loss)
+
         return edge_type_loss
 
     def pick_attachment_point(
@@ -402,9 +407,9 @@ class MLPDecoder(torch.nn.Module):
         )
 
         edge_type_loss = self.compute_edge_type_selection_loss(
-            correct_edge_choices,
             valid_edge_types,
             edge_type_logits,
+            correct_edge_choices,
             edge_type_onehot_labels,
         )
         # Compute attachement point selection loss
@@ -466,8 +471,3 @@ class MLPDecoder(torch.nn.Module):
             edge_type_logits,
             attachment_point_selection_logits,
         )
-
-
-def softmax_cross_entropy_with_logits(logits, targets, reduce="none"):
-    if reduce == "none":
-        return -targets * F.log_softmax(logits, -1)
