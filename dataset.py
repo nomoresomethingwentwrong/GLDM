@@ -23,7 +23,7 @@ class MolerData(Data):
         pos=None,
         original_graph_edge_index=None,
         original_graph_x=None,
-        valid_attachment_point_choices = None,
+        valid_attachment_point_choices=None,
         **kwargs,
     ):
         super().__init__(x, edge_index, edge_attr, y, pos, **kwargs)
@@ -65,6 +65,7 @@ class MolerDataset(Dataset):
         split="train",
         transform=None,
         pre_transform=None,
+        using_self_loops=True,
     ):
         self._processed_file_paths = None
         self._transform = transform
@@ -76,6 +77,7 @@ class MolerDataset(Dataset):
             output_pyg_trace_dataset_parent_folder
         )
         self._split = split
+        self._using_self_loops = using_self_loops
         self.load_metadata()
 
         # create the directory for the processed data if it doesn't exist
@@ -97,6 +99,11 @@ class MolerDataset(Dataset):
         self._processed_file_paths = pd.read_csv(processed_file_paths_csv)[
             "file_names"
         ].tolist()
+
+    @staticmethod
+    def _generate_self_loops(num_nodes):
+        """Generate a (num_nodes, 2) array of self loop edges."""
+        return np.repeat(np.arange(num_nodes, dtype=np.int32), 2).reshape(-1, 2)
 
     @property
     def raw_file_names(self):
@@ -275,7 +282,22 @@ class MolerDataset(Dataset):
                 if len(adj_list) != 0:
                     edge_index = adj_list.T
                     edge_indexes += [edge_index]
+                    """ 
+                    edge types: 
+                    single bond => 0
+                    double bond => 1
+                    triple bond => 2
+                    self loop => 3
+                    """
                     edge_types += [i] * len(adj_list)
+
+            # add self loops
+            if self._using_self_loops:
+                num_nodes_in_original_graph = molecule.node_features.shape[0]
+                edge_indexes += [
+                    self._generate_self_loops(num_nodes=num_nodes_in_original_graph)
+                ]
+                edge_indexes += [3] * len(num_nodes_in_original_graph)
 
             gen_step_features["original_graph_edge_index"] = (
                 np.concatenate(edge_indexes, 1)
@@ -297,8 +319,30 @@ class MolerDataset(Dataset):
                 if len(adj_list) != 0:
                     edge_index = adj_list.T
                     edge_indexes += [edge_index]
+                    """ 
+                    edge types: 
+                    single bond => 0
+                    double bond => 1
+                    triple bond => 2
+                    self loop => 3
+                    """
                     edge_types += [i] * len(adj_list)
 
+            # add self loops
+            if self._using_self_loops:
+                num_nodes_in_original_graph = molecule.node_features.shape[0]
+                edge_indexes += [
+                    self._generate_self_loops(num_nodes=num_nodes_in_original_graph)
+                ]
+                edge_indexes += [3] * len(num_nodes_in_original_graph)
+
+            # add self loops
+            if self._using_self_loops:
+                num_nodes_in_original_graph = molecule.node_features.shape[0]
+                edge_indexes += [
+                    self._generate_self_loops(num_nodes=num_nodes_in_original_graph)
+                ]
+                edge_indexes += [3] * len(num_nodes_in_original_graph)
             gen_step_features["edge_index"] = (
                 np.concatenate(edge_indexes, 1)
                 if len(edge_indexes) > 0

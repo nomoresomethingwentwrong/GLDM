@@ -236,13 +236,23 @@ class BaseModel(LightningModule):
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
         self.log_dict(
-            {f"train_{k}": v for k, v in logs.items()}, on_step=True, on_epoch=False
+            {f"train_{k}": v for k, v in logs.items()},
+            prog_bar=True,
+            on_step=True,
+            on_epoch=False,
+            batch_size=16,
         )
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
-        self.log_dict({f"val_{k}": v for k, v in logs.items()})
+        self.log_dict(
+            {f"val_{k}": v for k, v in logs.items()},
+            prog_bar=True,
+            on_step=True,
+            on_epoch=False,
+            batch_size=16,
+        )
         return loss
 
     def configure_optimizers(self):
