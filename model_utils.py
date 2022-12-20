@@ -25,6 +25,7 @@ class GenericGraphEncoder(torch.nn.Module):
     def __init__(
         self,
         input_feature_dim,
+        num_relations=4,
         hidden_layer_feature_dim=64,
         num_layers=12,
         layer_type="RGATConv",
@@ -35,7 +36,7 @@ class GenericGraphEncoder(torch.nn.Module):
             self._first_layer = RGATConv(
                 in_channels=input_feature_dim,
                 out_channels=hidden_layer_feature_dim,
-                num_relations=3,
+                num_relations=num_relations,
             )
 
             self._encoder_layers = torch.nn.ModuleList(
@@ -43,7 +44,7 @@ class GenericGraphEncoder(torch.nn.Module):
                     RGATConv(
                         in_channels=hidden_layer_feature_dim,
                         out_channels=hidden_layer_feature_dim,
-                        num_relations=3,
+                        num_relations=num_relations,
                     )
                     for _ in range(num_layers)
                 ]

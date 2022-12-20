@@ -8,12 +8,10 @@ class DuplicatedIndicesSamplerWrapper(Sampler):
 
     def __init__(
         self,
-        dataset,
         sampler,
         frequency_mapping,
     ):
         self.frequency_mapping = frequency_mapping
-        self.dataset = dataset
         self.sampler = sampler
 
     def __iter__(self):
