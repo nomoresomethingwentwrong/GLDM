@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 @dataclass
 class MoLeROutput:
+    first_node_type_logits: torch.Tensor
     node_type_logits: torch.Tensor
     edge_candidate_logits: torch.Tensor
     edge_type_logits: torch.Tensor

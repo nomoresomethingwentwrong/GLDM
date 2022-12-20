@@ -485,8 +485,6 @@ class MolerDataset(Dataset):
         as an attribute in the class. Then, we maintain a counter for iterating through the
         shard. Once we read the end of the data shard, we use the idx to read in another molecule.
         """
-        if idx == 6:
-            print("idx", idx)
         if self._current_in_memory_data_shard is not None:
             while not self._reached_end_of_current_data_shard():
                 # decide whether to drop the current generation step just like in MoLeR

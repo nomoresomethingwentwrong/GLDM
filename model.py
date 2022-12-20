@@ -123,6 +123,7 @@ class BaseModel(LightningModule):
     def forward(self, batch):
         moler_output = self._run_step(batch)
         return (
+            moler_output.first_node_type_logits,
             moler_output.node_type_logits,
             moler_output.edge_candidate_logits,
             moler_output.edge_type_logits,
@@ -154,6 +155,7 @@ class BaseModel(LightningModule):
 
         # Forward pass through decoder
         (
+            first_node_type_logits,
             node_type_logits,
             edge_candidate_logits,
             edge_type_logits,
@@ -175,6 +177,7 @@ class BaseModel(LightningModule):
 
         # NOTE: loss computation will be done in lightning module
         return MoLeROutput(
+            first_node_type_logits = first_node_type_logits,
             node_type_logits=node_type_logits,
             edge_candidate_logits=edge_candidate_logits,
             edge_type_logits=edge_type_logits,
@@ -191,9 +194,15 @@ class BaseModel(LightningModule):
             num_correct_node_type_choices, -1
         )
 
+        first_node_type_multihot_labels = batch.correct_first_node_type_choices.view(len(batch.ptr) -1, -1)
+        
         loss = self.decoder.compute_decoder_loss(
+            # node selection
             node_type_logits=moler_output.node_type_logits,
             node_type_multihot_labels=node_type_multihot_labels,
+            # first node selection 
+            first_node_type_logits = moler_output.first_node_type_logits,
+            first_node_type_multihot_labels = first_node_type_multihot_labels,
             # edge selection
             num_graphs_in_batch=len(batch.ptr) - 1,
             node_to_graph_map=batch.batch,

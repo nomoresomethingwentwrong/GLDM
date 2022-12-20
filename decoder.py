@@ -25,6 +25,12 @@ class MLPDecoder(torch.nn.Module):
         params,  # nested dictionary of parameters for each MLP
     ):
         super(MLPDecoder, self).__init__()
+
+        # TODO include each loss weight for weighted loss computation in the loss
+
+        # First Node Selection
+        self._first_node_type_selector =  GenericMLP(**params['first_node_type_selector'])
+
         # Node selection
         self._node_type_selector = GenericMLP(**params["node_type_selector"])
         self._node_type_loss_weights = params["node_type_loss_weights"]
@@ -113,10 +119,37 @@ class MLPDecoder(torch.nn.Module):
 
         return node_type_loss
 
+    def pick_first_node_type(
+        self, 
+        partial_graph_representions
+    ):
+        return self._first_node_type_selector(partial_graph_representions)
+
+    def compute_first_node_type_selection_loss(
+        self,
+        first_node_type_logits,
+        first_node_type_multihot_labels,
+    ):
+        per_graph_logprobs = torch.nn.functional.log_softmax(first_node_type_logits, dim = -1)
+        per_graph_num_correct_choices = torch.sum(first_node_type_multihot_labels, axis = -1, keepdims = True)
+        per_graph_normalised_neglogprob = compute_neglogprob_for_multihot_objective(
+            logprobs=per_graph_logprobs,
+            multihot_labels=first_node_type_multihot_labels,
+            per_decision_num_correct_choices=per_graph_num_correct_choices,
+        ) 
+        if self._node_type_loss_weights is not None:
+            per_graph_normalised_neglogprob *= self._node_type_loss_weights[:-1]
+            
+        first_node_type_loss = safe_divide_loss(
+            torch.sum(per_graph_normalised_neglogprob),
+            first_node_type_multihot_labels.shape[0],
+        )
+        return first_node_type_loss
+
     def pick_edge(
         self,
         input_molecule_representations,
-        partial_graph_representions,
+        partial_graph_representations,
         node_representations,
         num_graphs_in_batch,  # len(batch.ptr) - 1
         graph_to_focus_node_map,  # batch.focus_node
@@ -129,7 +162,7 @@ class MLPDecoder(torch.nn.Module):
         graph_and_focus_node_representations = torch.cat(
             (
                 input_molecule_representations,
-                partial_graph_representions,
+                partial_graph_representations,
                 focus_node_representations,
             ),
             axis=-1,
@@ -308,13 +341,13 @@ class MLPDecoder(torch.nn.Module):
     def pick_attachment_point(
         self,
         input_molecule_representations,  # as is
-        partial_graph_representions,  # partial_graph_representions
+        partial_graph_representations,  # partial_graph_representations
         node_representations,  # as is
         node_to_graph_map,  # batch.batch
         candidate_attachment_points,  # valid_attachment_point_choices
     ):
         original_and_calculated_graph_representations = torch.cat(
-            [input_molecule_representations, partial_graph_representions],
+            [input_molecule_representations, partial_graph_representations],
             axis=-1,
         )  # Shape: [PG, MD + PD]
 
@@ -372,6 +405,9 @@ class MLPDecoder(torch.nn.Module):
         # node selection
         node_type_logits,
         node_type_multihot_labels,
+        # first node selection
+        first_node_type_logits,
+        first_node_type_multihot_labels,
         # edge selection
         num_graphs_in_batch,
         node_to_graph_map,
@@ -393,6 +429,12 @@ class MLPDecoder(torch.nn.Module):
         # Compute node selection loss
         node_selection_loss = self.compute_node_type_selection_loss(
             node_type_logits, node_type_multihot_labels
+        )
+
+        # Compute first node selection loss
+        first_node_selection_loss = self.compute_first_node_type_selection_loss(
+            first_node_type_logits,
+            first_node_type_multihot_labels,
         )
 
         # Compute edge selection loss
@@ -419,9 +461,11 @@ class MLPDecoder(torch.nn.Module):
             attachment_point_correct_choices,
         )
 
-        # Weighted sum of the losses and return it for backpropagation in
+        # TODO Weighted sum of the losses and return it for backpropagation in
         # the lightning module
-        return node_selection_loss + edge_loss + edge_type_loss + attachment_point_loss
+        # TODO add weights of losses into params
+
+        return node_selection_loss +0.07 * first_node_selection_loss+ edge_loss + edge_type_loss + attachment_point_loss
 
     def forward(
         self,
@@ -445,6 +489,11 @@ class MLPDecoder(torch.nn.Module):
             graphs_requiring_node_choices,
         )
 
+        # Compute first node logits
+        first_node_logits = self.pick_first_node_type(
+            graph_representations
+        )
+
         # Compute edge logits
         edge_candidate_logits, edge_type_logits = self.pick_edge(
             input_molecule_representations,
@@ -459,13 +508,14 @@ class MLPDecoder(torch.nn.Module):
         # Compute attachment point logits
         attachment_point_selection_logits = self.pick_attachment_point(
             input_molecule_representations,  # as is
-            graph_representations,  # partial_graph_representions
+            graph_representations,  # partial_graph_representations
             node_representations,  # as is
             node_to_graph_map,
             candidate_attachment_points,
         )
         # return all logits
         return (
+            first_node_logits,
             node_logits,
             edge_candidate_logits,
             edge_type_logits,
