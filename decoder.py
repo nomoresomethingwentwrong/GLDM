@@ -121,9 +121,9 @@ class MLPDecoder(torch.nn.Module):
 
     def pick_first_node_type(
         self, 
-        latent_representation
+        latent_representations
     ):
-        return self._first_node_type_selector(latent_representation)
+        return self._first_node_type_selector(latent_representations)
 
     def compute_first_node_type_selection_loss(
         self,

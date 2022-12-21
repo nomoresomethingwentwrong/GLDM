@@ -142,7 +142,7 @@ def get_params():
   'edge_candidate_scorer': {'input_feature_dim': 3011, 'output_size': 1},
   'edge_type_selector': {'input_feature_dim': 3011, 'output_size': 3},
   'attachment_point_selector': {'input_feature_dim': 2176, 'output_size': 1},
-  'first_node_type_selector': {'input_feature_dim': 832, 'output_size': 139}},
+  'first_node_type_selector': {'input_feature_dim': 512, 'output_size': 139}},
  'latent_sample_strategy': 'per_graph',
  'latent_repr_dim': 512,
  'latent_repr_size': 512}
