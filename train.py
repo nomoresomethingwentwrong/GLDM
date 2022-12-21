@@ -45,10 +45,12 @@ train_dataloader = DataLoader(
         "correct_attachment_point_choice",
         "correct_node_type_choices",
         "original_graph_x",
+        'correct_first_node_type_choices'
     ],
 )
 params = get_params()
-model = BaseModel(params, train_dataset).to("cuda:1")
+print('HERE')
+model = BaseModel(params, train_dataset)#.to("cuda:1")
 
 
 # datamodule = LightningDataset(dataset)

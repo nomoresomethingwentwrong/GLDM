@@ -30,7 +30,7 @@ class MLPDecoder(torch.nn.Module):
 
         # First Node Selection
         self._first_node_type_selector =  GenericMLP(**params['first_node_type_selector'])
-
+        
         # Node selection
         self._node_type_selector = GenericMLP(**params["node_type_selector"])
         self._node_type_loss_weights = params["node_type_loss_weights"]
@@ -121,9 +121,9 @@ class MLPDecoder(torch.nn.Module):
 
     def pick_first_node_type(
         self, 
-        partial_graph_representions
+        latent_representation
     ):
-        return self._first_node_type_selector(partial_graph_representions)
+        return self._first_node_type_selector(latent_representation)
 
     def compute_first_node_type_selection_loss(
         self,
@@ -491,7 +491,7 @@ class MLPDecoder(torch.nn.Module):
 
         # Compute first node logits
         first_node_logits = self.pick_first_node_type(
-            graph_representations
+            input_molecule_representations
         )
 
         # Compute edge logits
