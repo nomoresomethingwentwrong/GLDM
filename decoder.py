@@ -469,7 +469,7 @@ class MLPDecoder(torch.nn.Module):
 
     def forward(
         self,
-        input_molecule_representations,
+        input_molecule_representations, # latent representation
         graph_representations,
         graphs_requiring_node_choices,
         # edge selection
@@ -507,7 +507,7 @@ class MLPDecoder(torch.nn.Module):
         )
         # Compute attachment point logits
         attachment_point_selection_logits = self.pick_attachment_point(
-            input_molecule_representations,  # as is
+            input_molecule_representations,  # latent representation
             graph_representations,  # partial_graph_representations
             node_representations,  # as is
             node_to_graph_map,
