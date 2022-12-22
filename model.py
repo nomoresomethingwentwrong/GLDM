@@ -190,11 +190,11 @@ class BaseModel(LightningModule):
         num_correct_node_type_choices = (
             batch.correct_node_type_choices_ptr.unique().shape[-1] - 1
         )
-        node_type_multihot_labels = batch.correct_node_type_choices.view(
-            num_correct_node_type_choices, -1
-        )
+        node_type_multihot_labels = batch.correct_node_type_choices#.view(
+        #     num_correct_node_type_choices, -1
+        # )
 
-        first_node_type_multihot_labels = batch.correct_first_node_type_choices.view(len(batch.ptr) -1, -1)
+        first_node_type_multihot_labels = batch.correct_first_node_type_choices#.view(len(batch.ptr) -1, -1)
         
         loss = self.decoder.compute_decoder_loss(
             # node selection

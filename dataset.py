@@ -47,6 +47,11 @@ class MolerData(Data):
         else:
             return super().__inc__(key, value, *args, **kwargs)
 
+    def __cat_dim__(self, key, value, *args, **kwargs):
+        if key == 'latent_representation':
+            return None
+        else:
+            return super().__cat_dim__(key, value, *args, **kwargs)
 
 def get_motif_type_to_node_type_index_map(motif_vocabulary, num_atom_types):
     """Helper to construct a mapping from motif type to shifted node type."""
@@ -174,8 +179,6 @@ class MolerDataset(Dataset):
 
     def node_types_to_multi_hot(self, node_types):
         """Convert between string representation to multi hot encoding of correct node types.
-
-        Note: implemented here for backwards compatibility only.
         """
         correct_indices = self.node_types_to_indices(node_types)
         multihot = np.zeros(shape=(self.num_node_types,), dtype=np.float32)
@@ -430,13 +433,15 @@ class MolerDataset(Dataset):
             if gen_step.correct_node_type_choices is not None:
                 gen_step_features[
                     "correct_node_type_choices"
-                ] = self.node_types_to_multi_hot(gen_step.correct_node_type_choices)
+                ] = np.array([self.node_types_to_multi_hot(gen_step.correct_node_type_choices)])
             else:
-                gen_step_features["correct_node_type_choices"] = []
-            gen_step_features[
-                "correct_first_node_type_choices"
-            ] = self.node_types_to_multi_hot(molecule.correct_first_node_type_choices)
-
+                gen_step_features["correct_node_type_choices"] = np.zeros(shape = (0,) + (self.num_node_types, ))
+            if molecule.correct_first_node_type_choices is not None:
+                gen_step_features[
+                    "correct_first_node_type_choices"
+                ] = np.array([self.node_types_to_multi_hot(molecule.correct_first_node_type_choices)])
+            else:
+                gen_step_features["correct_first_node_type_choices"] = np.zeros(shape = (0,) + (self.num_node_types, ))
             # Add graph_property_values
             gen_step_features = {**gen_step_features, **molecule_property_values}
             molecule_gen_steps += [gen_step_features]
