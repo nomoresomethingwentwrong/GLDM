@@ -4,7 +4,7 @@ sys.path.append("../moler_reference")
 from molecule_generation.utils.training_utils import get_class_balancing_weights
 from pytorch_lightning import LightningModule
 from model_utils import GenericGraphEncoder, GenericMLP, MoLeROutput
-from encoder import GraphEncoder
+from encoder import GraphEncoder, PartialGraphEncoder
 
 from decoder import MLPDecoder
 import torch
@@ -18,7 +18,7 @@ class BaseModel(LightningModule):
         self._params = params
         # Graph encoders
         self._full_graph_encoder = GraphEncoder(**self._params["full_graph_encoder"])
-        self._partial_graph_encoder = GenericGraphEncoder(
+        self._partial_graph_encoder = PartialGraphEncoder(
             **self._params["partial_graph_encoder"]
         )
 
@@ -142,10 +142,13 @@ class BaseModel(LightningModule):
 
         # Obtain graph level representation of the partial graph
         partial_graph_representions, node_representations = self.partial_graph_encoder(
-            node_features=batch.x,
-            edge_index=batch.edge_index.long(),
-            edge_type=batch.edge_type.int(),
-            batch_index=batch.batch,
+            partial_graph_node_categorical_features = batch.partial_node_categorical_features,
+            node_features = batch.x,
+            edge_index = batch.edge_index.long(), 
+            edge_type = batch.edge_type, 
+            graph_to_focus_node_map = batch.focus_node,
+            candidate_attachment_points = batch.valid_attachment_point_choices,
+            batch_index = batch.batch
         )
 
         # Apply latent sampling strategy
@@ -167,7 +170,7 @@ class BaseModel(LightningModule):
             # edge selection
             node_representations=node_representations,
             num_graphs_in_batch=len(batch.ptr) - 1,
-            graph_to_focus_node_map=batch.focus_node,
+            focus_node_idx_in_batch=batch.focus_node,
             node_to_graph_map=batch.batch,
             candidate_edge_targets=batch.valid_edge_choices[:, 1].long(),
             candidate_edge_features=batch.edge_features,

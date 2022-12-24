@@ -152,12 +152,12 @@ class MLPDecoder(torch.nn.Module):
         partial_graph_representations,
         node_representations,
         num_graphs_in_batch,  # len(batch.ptr) - 1
-        graph_to_focus_node_map,  # batch.focus_node
+        focus_node_idx_in_batch,  # batch.focus_node
         node_to_graph_map,  # batch.batch
         candidate_edge_targets,  # batch.valid_edge_choices[:, 1]
         candidate_edge_features,  # batch.edge_features
     ):
-        focus_node_representations = node_representations[graph_to_focus_node_map]
+        focus_node_representations = node_representations[focus_node_idx_in_batch]
 
         graph_and_focus_node_representations = torch.cat(
             (
@@ -475,7 +475,7 @@ class MLPDecoder(torch.nn.Module):
         # edge selection
         node_representations,
         num_graphs_in_batch,
-        graph_to_focus_node_map,
+        focus_node_idx_in_batch,
         node_to_graph_map,
         candidate_edge_targets,
         candidate_edge_features,
@@ -500,7 +500,7 @@ class MLPDecoder(torch.nn.Module):
             graph_representations,
             node_representations,
             num_graphs_in_batch,
-            graph_to_focus_node_map,
+            focus_node_idx_in_batch,
             node_to_graph_map,
             candidate_edge_targets,
             candidate_edge_features,

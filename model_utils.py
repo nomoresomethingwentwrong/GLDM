@@ -116,7 +116,7 @@ class GenericMLP(torch.nn.Module):
 def get_params():
     return {'full_graph_encoder': {'input_feature_dim': 32,
   'atom_or_motif_vocab_size': 139},
- 'partial_graph_encoder': {'input_feature_dim': 32},
+ 'partial_graph_encoder': {'input_feature_dim': 32,'atom_or_motif_vocab_size': 139},
  'mean_log_var_mlp': {'input_feature_dim': 832, 'output_size': 1024},
  'decoder': {'node_type_selector': {'input_feature_dim': 1344,
    'output_size': 140},
