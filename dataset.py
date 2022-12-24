@@ -10,7 +10,17 @@ import random
 import sys
 
 sys.path.append("../moler_reference")
-
+to_increment_by_num_nodes_in_graph = [
+    "focus_node",
+    "valid_attachment_point_choices",
+    "valid_edge_choices",
+    # pick attachment points
+    "candidate_attachment_points",
+    # pick edge 
+    "focus_atoms",
+    "candidate_edge_targets",
+    "candidate_edge_type_masks",
+]
 
 class MolerData(Data):
     """To ensure that both the original graph and the partial graph edge indices are incremented."""
@@ -36,15 +46,9 @@ class MolerData(Data):
     def __inc__(self, key, value, *args, **kwargs):
         if key == "original_graph_edge_index":
             return self.original_graph_x.size(0)
-        if key == "focus_node":
-            return self.x.size(0)
         if key == "correct_attachment_point_choice":
             return self.valid_attachment_point_choices.size(0)
-        if key == "valid_attachment_point_choices":
-            return self.x.size(0)
-        if key == "valid_edge_choices":
-            return self.x.size(0)
-        if key == 'candidate_attachment_points':
+        if key in to_increment_by_num_nodes_in_graph:
             return self.x.size(0)
         else:
             return super().__inc__(key, value, *args, **kwargs)
