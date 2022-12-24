@@ -44,6 +44,8 @@ class MolerData(Data):
             return self.x.size(0)
         if key == "valid_edge_choices":
             return self.x.size(0)
+        if key == 'candidate_attachment_points':
+            return self.x.size(0)
         else:
             return super().__inc__(key, value, *args, **kwargs)
 
