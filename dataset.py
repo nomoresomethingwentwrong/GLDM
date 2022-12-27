@@ -8,7 +8,7 @@ import pickle
 import concurrent.futures
 import random
 import sys
-
+from tqdm import tqdm
 sys.path.append("../moler_reference")
 to_increment_by_num_nodes_in_graph = [
     "focus_node",
@@ -259,13 +259,13 @@ class MolerDataset(Dataset):
             pass
         else:
             self.load_metadata()
-            for pkl_file_path in self.raw_file_names:
+            for pkl_file_path in tqdm(self.raw_file_names):
                 generation_steps = self._convert_data_shard_to_list_of_trace_steps(
                     pkl_file_path
                 )
 
                 # for molecule_idx, molecule_gen_steps in generation_steps:
-                with concurrent.futures.ProcessPoolExecutor(max_workers=5) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                     futures = executor.map(
                         self._save_processed_gen_step,
                         (

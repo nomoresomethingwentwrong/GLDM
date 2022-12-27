@@ -25,6 +25,7 @@ class MLPDecoder(torch.nn.Module):
         params,  # nested dictionary of parameters for each MLP
     ):
         super(MLPDecoder, self).__init__()
+        self.dummy_param = torch.nn.Parameter(torch.empty(0)) # for inferrring device of model
 
         # TODO include each loss weight for weighted loss computation in the loss
 
@@ -185,7 +186,7 @@ class MLPDecoder(torch.nn.Module):
 
         # The zeroth element of edge_features is the graph distance. We need to look that up
         # in the distance embeddings:
-        truncated_distances = candidate_edge_features[:, 0].minimum((torch.ones(len(candidate_edge_features)) * (distance_truncation - 1)).cuda())
+        truncated_distances = candidate_edge_features[:, 0].minimum((torch.ones(len(candidate_edge_features)) * (distance_truncation - 1)).to(self.dummy_param.device))
         # shape: [CE]
 
         distance_embedding = self._distance_embedding_layer(truncated_distances.long())
@@ -249,7 +250,7 @@ class MLPDecoder(torch.nn.Module):
         edge_candidate_to_graph_map = node_to_graph_map[candidate_edge_targets]
         # add the end bond labels to the end
         edge_candidate_to_graph_map = torch.cat(
-            (edge_candidate_to_graph_map, torch.arange(0, num_graphs_in_batch).cuda())
+            (edge_candidate_to_graph_map, torch.arange(0, num_graphs_in_batch).to(self.dummy_param.device))
         )
 
         edge_candidate_logprobs = traced_unsorted_segment_log_softmax(
@@ -279,7 +280,7 @@ class MLPDecoder(torch.nn.Module):
         # the stop node, so can be zero.
         per_graph_num_correct_edge_choices = torch.max(
             per_graph_num_correct_edge_choices,
-            torch.ones(per_graph_num_correct_edge_choices.shape).cuda(),
+            torch.ones(per_graph_num_correct_edge_choices.shape).to(self.dummy_param.device),
         )  # Shape: [PG]
 
         per_edge_candidate_num_correct_choices = per_graph_num_correct_edge_choices[

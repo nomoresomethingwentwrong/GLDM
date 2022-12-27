@@ -16,6 +16,7 @@ class GraphEncoder(torch.nn.Module):
         use_intermediate_gnn_results=True,
     ):
         super(GraphEncoder, self).__init__()
+        self.dummy_param = torch.nn.Parameter(torch.empty(0)) # for inferrring device of model
         self._embed = torch.nn.Embedding(atom_or_motif_vocab_size, motif_embedding_size)
         self._model = GenericGraphEncoder(
             input_feature_dim=motif_embedding_size + input_feature_dim,
@@ -55,6 +56,7 @@ class PartialGraphEncoder(torch.nn.Module):
         use_intermediate_gnn_results=True,
     ):
         super(PartialGraphEncoder, self).__init__()
+        self.dummy_param = torch.nn.Parameter(torch.empty(0)) # for inferrring device of model
         self._embed = torch.nn.Embedding(atom_or_motif_vocab_size, motif_embedding_size)
         self._model = GenericGraphEncoder(
             input_feature_dim=motif_embedding_size + input_feature_dim + 1, # add one for node in focus bit
@@ -84,14 +86,14 @@ class PartialGraphEncoder(torch.nn.Module):
             [graph_to_focus_node_map, candidate_attachment_points], axis=0
         )
 
-        node_is_in_focus_bit_zeros = torch.zeros(node_features.shape[0], 1).cuda()
+        node_is_in_focus_bit_zeros = torch.zeros(node_features.shape[0], 1).to(self.dummy_param.device)
 
         node_is_in_focus_bit = node_is_in_focus_bit_zeros.index_add_(
             dim = 0, 
-            index = nodes_to_set_in_focus_bit.int().cuda(), 
-            source = torch.ones(nodes_to_set_in_focus_bit.shape[0]).cuda()
+            index = nodes_to_set_in_focus_bit.int().to(self.dummy_param.device), 
+            source = torch.ones(nodes_to_set_in_focus_bit.shape[0]).to(self.dummy_param.device)
         )
-        node_is_in_focus_bit = node_is_in_focus_bit.minimum(torch.ones(1).cuda())
+        node_is_in_focus_bit = node_is_in_focus_bit.minimum(torch.ones(1).to(self.dummy_param.device))
         initial_node_features = torch.cat([initial_node_features, node_is_in_focus_bit], axis=-1)
 
         partial_graph_representions, node_representations = self._model(
