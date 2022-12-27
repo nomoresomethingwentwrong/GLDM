@@ -5,11 +5,22 @@ import numpy as np
 import torch
 import gzip
 import pickle
-
+import concurrent.futures
+import random
 import sys
-
+from tqdm import tqdm
 sys.path.append("../moler_reference")
-
+to_increment_by_num_nodes_in_graph = [
+    "focus_node",
+    "valid_attachment_point_choices",
+    "valid_edge_choices",
+    # pick attachment points
+    "candidate_attachment_points",
+    # pick edge 
+    "focus_atoms",
+    "candidate_edge_targets",
+    "candidate_edge_type_masks",
+]
 
 class MolerData(Data):
     """To ensure that both the original graph and the partial graph edge indices are incremented."""
@@ -23,7 +34,7 @@ class MolerData(Data):
         pos=None,
         original_graph_edge_index=None,
         original_graph_x=None,
-        valid_attachment_point_choices = None,
+        valid_attachment_point_choices=None,
         **kwargs,
     ):
         super().__init__(x, edge_index, edge_attr, y, pos, **kwargs)
@@ -35,17 +46,18 @@ class MolerData(Data):
     def __inc__(self, key, value, *args, **kwargs):
         if key == "original_graph_edge_index":
             return self.original_graph_x.size(0)
-        if key == "focus_node":
-            return self.x.size(0)
         if key == "correct_attachment_point_choice":
             return self.valid_attachment_point_choices.size(0)
-        if key == "valid_attachment_point_choices":
-            return self.x.size(0)
-        if key == "valid_edge_choices":
+        if key in to_increment_by_num_nodes_in_graph:
             return self.x.size(0)
         else:
             return super().__inc__(key, value, *args, **kwargs)
 
+    def __cat_dim__(self, key, value, *args, **kwargs):
+        if key == 'latent_representation':
+            return None
+        else:
+            return super().__cat_dim__(key, value, *args, **kwargs)
 
 def get_motif_type_to_node_type_index_map(motif_vocabulary, num_atom_types):
     """Helper to construct a mapping from motif type to shifted node type."""
@@ -65,6 +77,8 @@ class MolerDataset(Dataset):
         split="train",
         transform=None,
         pre_transform=None,
+        using_self_loops=True,
+        gen_step_drop_probability=0.0,
     ):
         self._processed_file_paths = None
         self._transform = transform
@@ -76,6 +90,13 @@ class MolerDataset(Dataset):
             output_pyg_trace_dataset_parent_folder
         )
         self._split = split
+        self._using_self_loops = using_self_loops
+
+        # attribute for current molecule ie current data shard
+        self._current_in_memory_data_shard = None
+        self._current_in_memory_data_shard_counter = None
+
+        self._gen_step_drop_probability = gen_step_drop_probability
         self.load_metadata()
 
         # create the directory for the processed data if it doesn't exist
@@ -97,6 +118,11 @@ class MolerDataset(Dataset):
         self._processed_file_paths = pd.read_csv(processed_file_paths_csv)[
             "file_names"
         ].tolist()
+
+    @staticmethod
+    def _generate_self_loops(num_nodes):
+        """Generate a (num_nodes, 2) array of self loop edges."""
+        return np.repeat(np.arange(num_nodes, dtype=np.int32), 2).reshape(-1, 2)
 
     @property
     def raw_file_names(self):
@@ -159,8 +185,6 @@ class MolerDataset(Dataset):
 
     def node_types_to_multi_hot(self, node_types):
         """Convert between string representation to multi hot encoding of correct node types.
-
-        Note: implemented here for backwards compatibility only.
         """
         correct_indices = self.node_types_to_indices(node_types)
         multihot = np.zeros(shape=(self.num_node_types,), dtype=np.float32)
@@ -206,12 +230,23 @@ class MolerDataset(Dataset):
         else:
             self._motif_to_node_type_index = {}
 
-    def generate_preprocessed_file_paths_csv(self, preprocessed_file_paths_folder):
-        file_paths = [
-            os.path.join(preprocessed_file_paths_folder, file_path)
-            for file_path in os.listdir(preprocessed_file_paths_folder)
+    def generate_preprocessed_file_paths_csv(
+        self, preprocessed_file_paths_folder, results
+    ):
+        # file_paths = [
+        #     os.path.join(preprocessed_file_paths_folder, file_path)
+        #     for file_path in os.listdir(preprocessed_file_paths_folder)
+        # ]
+        file_paths = [result["file_path"] for result in results]
+        molecule_gen_steps_length = [
+            result["molecule_gen_steps_length"] for result in results
         ]
-        df = pd.DataFrame(file_paths, columns=["file_names"])
+        df = pd.DataFrame(
+            {
+                "file_names": file_paths,
+                "molecule_gen_steps_length": molecule_gen_steps_length,
+            }
+        )
         processed_file_paths_csv = os.path.join(
             preprocessed_file_paths_folder, "processed_file_paths.csv"
         )
@@ -224,26 +259,65 @@ class MolerDataset(Dataset):
             pass
         else:
             self.load_metadata()
-            for pkl_file_path in self.raw_file_names:
+            for pkl_file_path in tqdm(self.raw_file_names):
                 generation_steps = self._convert_data_shard_to_list_of_trace_steps(
                     pkl_file_path
                 )
 
-                for molecule_idx, molecule_gen_steps in generation_steps:
-                    for step_idx, step in enumerate(molecule_gen_steps):
-                        file_name = f'{pkl_file_path.split("/")[-1].split(".")[0]}_mol_{molecule_idx}_step_{step_idx}.pt'
-                        file_path = os.path.join(
-                            self._output_pyg_trace_dataset_parent_folder,
-                            self._split,
-                            file_name,
-                        )
-                        print("file_path", file_path)
-                        torch.save(step, file_path)
-                        print(f"Processing {molecule_idx}, step {step_idx}")
+                # for molecule_idx, molecule_gen_steps in generation_steps:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                    futures = executor.map(
+                        self._save_processed_gen_step,
+                        (
+                            (pkl_file_path, molecule_idx, molecule_gen_steps)
+                            for molecule_idx, molecule_gen_steps in generation_steps
+                        ),
+                    )
+                    results = list(futures)
+                    # for future in futures:
+                    #     print(f"Done with molecule {future}")
+                    # for step_idx, step in enumerate(molecule_gen_steps):
 
             self.generate_preprocessed_file_paths_csv(
-                os.path.join(self._output_pyg_trace_dataset_parent_folder, self._split)
+                preprocessed_file_paths_folder=os.path.join(
+                    self._output_pyg_trace_dataset_parent_folder, self._split
+                ),
+                results=results,
             )
+
+    def _save_processed_gen_step(self, pkl_file_path_molecule_idx_molecule_gen_steps):
+        (
+            pkl_file_path,
+            molecule_idx,
+            molecule_gen_steps,
+        ) = pkl_file_path_molecule_idx_molecule_gen_steps
+
+        # for step_idx, step in enumerate(molecule_gen_steps):
+        #     file_name = f'{pkl_file_path.split("/")[-1].split(".")[0]}_mol_{molecule_idx}_step_{step_idx}.pt'  # .pkl.gz'  #
+        #     file_path = os.path.join(
+        #         self._output_pyg_trace_dataset_parent_folder,
+        #         self._split,
+        #         file_name,
+        #     )
+        #     print("file_path", file_path)
+        #     torch.save(step, file_path)
+        #     print(f"Processing {molecule_idx}, step {step_idx}")
+
+        file_name = (
+            f'{pkl_file_path.split("/")[-1].split(".")[0]}_mol_{molecule_idx}.pkl.gz'  #
+        )
+        file_path = os.path.join(
+            self._output_pyg_trace_dataset_parent_folder,
+            self._split,
+            file_name,
+        )
+        with gzip.open(file_path, "wb") as shard_file_path:
+            pickle.dump(molecule_gen_steps, shard_file_path)
+
+        return {
+            "file_path": file_path,
+            "molecule_gen_steps_length": len(molecule_gen_steps),
+        }
 
     def _convert_data_shard_to_list_of_trace_steps(self, pkl_file_path):
         # TODO: multiprocessing to speed this up
@@ -275,7 +349,22 @@ class MolerDataset(Dataset):
                 if len(adj_list) != 0:
                     edge_index = adj_list.T
                     edge_indexes += [edge_index]
+                    """ 
+                    edge types: 
+                    single bond => 0
+                    double bond => 1
+                    triple bond => 2
+                    self loop => 3
+                    """
                     edge_types += [i] * len(adj_list)
+
+            # add self loops
+            if self._using_self_loops:
+                num_nodes_in_original_graph = molecule.node_features.shape[0]
+                edge_indexes += [
+                    self._generate_self_loops(num_nodes=num_nodes_in_original_graph).T
+                ]
+                edge_types += [3] * num_nodes_in_original_graph
 
             gen_step_features["original_graph_edge_index"] = (
                 np.concatenate(edge_indexes, 1)
@@ -297,7 +386,22 @@ class MolerDataset(Dataset):
                 if len(adj_list) != 0:
                     edge_index = adj_list.T
                     edge_indexes += [edge_index]
+                    """ 
+                    edge types: 
+                    single bond => 0
+                    double bond => 1
+                    triple bond => 2
+                    self loop => 3
+                    """
                     edge_types += [i] * len(adj_list)
+
+            # add self loops
+            if self._using_self_loops:
+                num_nodes_in_partial_graph = gen_step.partial_node_features.shape[0]
+                edge_indexes += [
+                    self._generate_self_loops(num_nodes=num_nodes_in_partial_graph).T
+                ]
+                edge_types += [3] * num_nodes_in_partial_graph
 
             gen_step_features["edge_index"] = (
                 np.concatenate(edge_indexes, 1)
@@ -335,13 +439,15 @@ class MolerDataset(Dataset):
             if gen_step.correct_node_type_choices is not None:
                 gen_step_features[
                     "correct_node_type_choices"
-                ] = self.node_types_to_multi_hot(gen_step.correct_node_type_choices)
+                ] = np.array([self.node_types_to_multi_hot(gen_step.correct_node_type_choices)])
             else:
-                gen_step_features["correct_node_type_choices"] = []
-            gen_step_features[
-                "correct_first_node_type_choices"
-            ] = self.node_types_to_multi_hot(molecule.correct_first_node_type_choices)
-
+                gen_step_features["correct_node_type_choices"] = np.zeros(shape = (0,) + (self.num_node_types, ))
+            if molecule.correct_first_node_type_choices is not None:
+                gen_step_features[
+                    "correct_first_node_type_choices"
+                ] = np.array([self.node_types_to_multi_hot(molecule.correct_first_node_type_choices)])
+            else:
+                gen_step_features["correct_first_node_type_choices"] = np.zeros(shape = (0,) + (self.num_node_types, ))
             # Add graph_property_values
             gen_step_features = {**gen_step_features, **molecule_property_values}
             molecule_gen_steps += [gen_step_features]
@@ -359,7 +465,58 @@ class MolerDataset(Dataset):
     def len(self):
         return self.processed_file_names_size
 
+    def _size_of_current_data_shard(self):
+        return len(self._current_in_memory_data_shard)
+
+    def _reached_end_of_current_data_shard(self):
+        return self._current_in_memory_data_shard_counter == len(
+            self._current_in_memory_data_shard
+        )
+
+    def _read_in_data_shard(self, file_path):
+        with gzip.open(file_path, "rb") as f:
+            self._current_in_memory_data_shard = pickle.load(f)
+        self._current_in_memory_data_shard_counter = 0
+
+    def _read_in_and_extract_first_item_of_data_shard(self, file_path):
+        self._read_in_data_shard(file_path)
+        self._current_in_memory_data_shard_counter += 1  # reset counter
+        return self._current_in_memory_data_shard[0]
+
+    def _drop_current_gen_step(self):
+        return True if random.random() < self._gen_step_drop_probability else False
+
     def get(self, idx):
-        file_path = self.processed_file_names[idx]
-        data = torch.load(file_path)
-        return data
+        """
+        This is a workaround for reading in one data shard at a time (one molecule at a time)
+        Each molecule has a varying number of generation steps, and all the generation steps
+        for one particular molecule will be stored in a single data shard.
+
+        We use the idx to reference the molecule idx and read in each data shard and store it
+        as an attribute in the class. Then, we maintain a counter for iterating through the
+        shard. Once we read the end of the data shard, we use the idx to read in another molecule.
+        """
+        if self._current_in_memory_data_shard is not None:
+            while not self._reached_end_of_current_data_shard():
+                # decide whether to drop the current generation step just like in MoLeR
+
+                if not self._drop_current_gen_step():
+                    data = self._current_in_memory_data_shard[
+                        self._current_in_memory_data_shard_counter
+                    ]
+                    self._current_in_memory_data_shard_counter += 1
+                    return data
+
+                self._current_in_memory_data_shard_counter += 1
+
+            file_path = self.processed_file_names[idx]
+            return self._read_in_and_extract_first_item_of_data_shard(file_path)
+        else:
+
+            file_path = self.processed_file_names[idx]
+            return self._read_in_and_extract_first_item_of_data_shard(file_path)
+
+        # alternative for reading in individual .pt files (NOTE currently infeasible)
+        # file_path = self.processed_file_names[idx]
+        # data = torch.load(file_path)
+        # return data

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 @dataclass
 class MoLeROutput:
+    first_node_type_logits: torch.Tensor
     node_type_logits: torch.Tensor
     edge_candidate_logits: torch.Tensor
     edge_type_logits: torch.Tensor
@@ -25,6 +26,7 @@ class GenericGraphEncoder(torch.nn.Module):
     def __init__(
         self,
         input_feature_dim,
+        num_relations=4,
         hidden_layer_feature_dim=64,
         num_layers=12,
         layer_type="RGATConv",
@@ -35,7 +37,7 @@ class GenericGraphEncoder(torch.nn.Module):
             self._first_layer = RGATConv(
                 in_channels=input_feature_dim,
                 out_channels=hidden_layer_feature_dim,
-                num_relations=3,
+                num_relations=num_relations,
             )
 
             self._encoder_layers = torch.nn.ModuleList(
@@ -43,7 +45,7 @@ class GenericGraphEncoder(torch.nn.Module):
                     RGATConv(
                         in_channels=hidden_layer_feature_dim,
                         out_channels=hidden_layer_feature_dim,
-                        num_relations=3,
+                        num_relations=num_relations,
                     )
                     for _ in range(num_layers)
                 ]
@@ -109,3 +111,38 @@ class GenericMLP(torch.nn.Module):
             x = layer(x)
         x = self._output_layer(x)
         return x
+
+
+def get_params():
+    return {'full_graph_encoder': {'input_feature_dim': 32,
+  'atom_or_motif_vocab_size': 139},
+ 'partial_graph_encoder': {'input_feature_dim': 32,'atom_or_motif_vocab_size': 139},
+ 'mean_log_var_mlp': {'input_feature_dim': 832, 'output_size': 1024},
+ 'decoder': {'node_type_selector': {'input_feature_dim': 1344,
+   'output_size': 140},
+  'node_type_loss_weights': torch.tensor([10.0000,  0.1000,  0.1000,  0.1000,  0.7879,  0.4924,  0.6060, 10.0000,
+           7.8786, 10.0000,  7.8786,  0.1000,  0.6565,  0.6565,  0.9848,  0.8754,
+           0.8754,  1.1255,  0.9848,  1.3131,  1.5757,  1.9696,  1.5757,  1.9696,
+           2.6262,  1.9696,  1.9696,  7.8786,  7.8786,  3.9393,  2.6262,  2.6262,
+           2.6262,  2.6262,  3.9393,  7.8786,  7.8786,  7.8786,  3.9393,  7.8786,
+          10.0000,  7.8786,  3.9393,  3.9393,  3.9393,  3.9393,  3.9393,  3.9393,
+           3.9393,  3.9393,  3.9393,  3.9393,  3.9393,  3.9393,  7.8786,  7.8786,
+          10.0000, 10.0000,  7.8786,  7.8786, 10.0000,  7.8786,  7.8786, 10.0000,
+           7.8786,  7.8786, 10.0000,  7.8786, 10.0000,  7.8786,  7.8786, 10.0000,
+           7.8786,  7.8786,  7.8786, 10.0000, 10.0000,  7.8786,  7.8786,  7.8786,
+           7.8786,  7.8786, 10.0000, 10.0000, 10.0000, 10.0000,  7.8786, 10.0000,
+          10.0000, 10.0000,  7.8786, 10.0000,  7.8786, 10.0000,  7.8786, 10.0000,
+          10.0000, 10.0000, 10.0000, 10.0000, 10.0000, 10.0000, 10.0000,  7.8786,
+          10.0000,  7.8786,  7.8786,  7.8786,  7.8786, 10.0000,  7.8786, 10.0000,
+          10.0000, 10.0000,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,
+           7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,
+           7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,
+           7.8786,  7.8786,  7.8786,  0.1000]).cuda(),
+  'no_more_edges_repr': (1, 835),
+  'edge_candidate_scorer': {'input_feature_dim': 3011, 'output_size': 1},
+  'edge_type_selector': {'input_feature_dim': 3011, 'output_size': 3},
+  'attachment_point_selector': {'input_feature_dim': 2176, 'output_size': 1},
+  'first_node_type_selector': {'input_feature_dim': 512, 'output_size': 139}},
+ 'latent_sample_strategy': 'per_graph',
+ 'latent_repr_dim': 512,
+ 'latent_repr_size': 512}
