@@ -185,10 +185,8 @@ class MLPDecoder(torch.nn.Module):
 
         # The zeroth element of edge_features is the graph distance. We need to look that up
         # in the distance embeddings:
-        truncated_distances = torch.minimum(
-            candidate_edge_features[:, 0],
-            torch.ones(len(candidate_edge_features)) * (distance_truncation - 1),
-        )  # shape: [CE]
+        truncated_distances = candidate_edge_features[:, 0].minimum((torch.ones(len(candidate_edge_features)) * (distance_truncation - 1)).cuda())
+        # shape: [CE]
 
         distance_embedding = self._distance_embedding_layer(truncated_distances.long())
 
@@ -251,7 +249,7 @@ class MLPDecoder(torch.nn.Module):
         edge_candidate_to_graph_map = node_to_graph_map[candidate_edge_targets]
         # add the end bond labels to the end
         edge_candidate_to_graph_map = torch.cat(
-            (edge_candidate_to_graph_map, torch.arange(0, num_graphs_in_batch))
+            (edge_candidate_to_graph_map, torch.arange(0, num_graphs_in_batch).cuda())
         )
 
         edge_candidate_logprobs = traced_unsorted_segment_log_softmax(
@@ -281,7 +279,7 @@ class MLPDecoder(torch.nn.Module):
         # the stop node, so can be zero.
         per_graph_num_correct_edge_choices = torch.max(
             per_graph_num_correct_edge_choices,
-            torch.ones(per_graph_num_correct_edge_choices.shape),
+            torch.ones(per_graph_num_correct_edge_choices.shape).cuda(),
         )  # Shape: [PG]
 
         per_edge_candidate_num_correct_choices = per_graph_num_correct_edge_choices[

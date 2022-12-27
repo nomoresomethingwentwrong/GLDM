@@ -249,7 +249,7 @@ class BaseModel(LightningModule):
         loss, logs = self.step(batch)
         self.log_dict(
             {f"train_{k}": v for k, v in logs.items()},
-            prog_bar=True,
+            # prog_bar=True,
             on_step=True,
             on_epoch=False,
             batch_size=16,
