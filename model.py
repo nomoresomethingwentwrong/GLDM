@@ -322,7 +322,7 @@ class BaseModel(LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=1e-3)
+        return torch.optim.Adam(self.parameters(), lr=1e-4)
 
     def _decoder_pick_first_atom_types(
         self,

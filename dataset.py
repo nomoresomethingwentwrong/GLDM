@@ -258,25 +258,28 @@ class MolerDataset(Dataset):
         if self.processed_file_names_size > 0:
             pass
         else:
+            results = []
             self.load_metadata()
-            for pkl_file_path in tqdm(self.raw_file_names):
-                generation_steps = self._convert_data_shard_to_list_of_trace_steps(
-                    pkl_file_path
-                )
+            generation_steps = []
+            accumulated_num_steps = 0
 
-                # for molecule_idx, molecule_gen_steps in generation_steps:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                    futures = executor.map(
-                        self._save_processed_gen_step,
-                        (
-                            (pkl_file_path, molecule_idx, molecule_gen_steps)
-                            for molecule_idx, molecule_gen_steps in generation_steps
-                        ),
-                    )
-                    results = list(futures)
-                    # for future in futures:
-                    #     print(f"Done with molecule {future}")
-                    # for step_idx, step in enumerate(molecule_gen_steps):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                future_gen_steps_to_pkl_file_path = {executor.submit(self._convert_data_shard_to_list_of_trace_steps, pkl_file_path): pkl_file_path for pkl_file_path in self.raw_file_names}
+                accumulated_generation_steps = []
+                with tqdm(total = len(self.raw_file_names)) as pbar:
+                    for future_gen_steps in tqdm(concurrent.futures.as_completed(future_gen_steps_to_pkl_file_path)):
+                        pkl_file_path = future_gen_steps_to_pkl_file_path[future_gen_steps]
+                        current_generation_steps = future_gen_steps.result()
+                        accumulated_generation_steps += current_generation_steps
+                        accumulated_num_steps += len(current_generation_steps)
+
+                        if accumulated_num_steps > 1000:
+                            generation_steps.append((accumulated_generation_steps, pkl_file_path))
+                            accumulated_generation_steps.clear()
+                        pbar.update(1)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                futures = executor.map(self._save_processed_gen_step, ((molecule_gen_steps, pkl_file_path) for molecule_gen_steps, pkl_file_path in generation_steps))
+                results = list(tqdm(futures))        
 
             self.generate_preprocessed_file_paths_csv(
                 preprocessed_file_paths_folder=os.path.join(
@@ -285,12 +288,9 @@ class MolerDataset(Dataset):
                 results=results,
             )
 
-    def _save_processed_gen_step(self, pkl_file_path_molecule_idx_molecule_gen_steps):
-        (
-            pkl_file_path,
-            molecule_idx,
-            molecule_gen_steps,
-        ) = pkl_file_path_molecule_idx_molecule_gen_steps
+    def _save_processed_gen_step(self, molecule_gen_steps, pkl_file_path):
+        """Saves a list of trace steps corresponding to different molecules."""
+
 
         # for step_idx, step in enumerate(molecule_gen_steps):
         #     file_name = f'{pkl_file_path.split("/")[-1].split(".")[0]}_mol_{molecule_idx}_step_{step_idx}.pt'  # .pkl.gz'  #
@@ -304,7 +304,7 @@ class MolerDataset(Dataset):
         #     print(f"Processing {molecule_idx}, step {step_idx}")
 
         file_name = (
-            f'{pkl_file_path.split("/")[-1].split(".")[0]}_mol_{molecule_idx}.pkl.gz'  #
+            f'{pkl_file_path.split("/")[-1].split(".")[0]}_nsteps_{len(molecule_gen_steps)}.pkl.gz'  #
         )
         file_path = os.path.join(
             self._output_pyg_trace_dataset_parent_folder,
@@ -325,11 +325,8 @@ class MolerDataset(Dataset):
 
         with gzip.open(pkl_file_path, "rb") as f:
             molecules = pickle.load(f)
-            for molecule_idx, molecule in enumerate(molecules):
-
-                generation_steps += [
-                    (molecule_idx, self._extract_generation_steps(molecule))
-                ]
+            for molecule in molecules:
+                generation_steps += self._extract_generation_steps(molecule)
 
         return generation_steps
 
