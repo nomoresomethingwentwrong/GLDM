@@ -1,4 +1,4 @@
-from torch_geometric.data import Dataset, Data
+from torch_geometric.data import Dataset, Data, Batch
 import os
 import pandas as pd
 import numpy as np
@@ -267,7 +267,7 @@ class MolerDataset(Dataset):
                 future_gen_steps_to_pkl_file_path = {executor.submit(self._convert_data_shard_to_list_of_trace_steps, pkl_file_path): pkl_file_path for pkl_file_path in self.raw_file_names}
                 accumulated_generation_steps = []
                 with tqdm(total = len(self.raw_file_names)) as pbar:
-                    for future_gen_steps in tqdm(concurrent.futures.as_completed(future_gen_steps_to_pkl_file_path)):
+                    for future_gen_steps in concurrent.futures.as_completed(future_gen_steps_to_pkl_file_path):
                         pkl_file_path = future_gen_steps_to_pkl_file_path[future_gen_steps]
                         current_generation_steps = future_gen_steps.result()
                         accumulated_generation_steps += current_generation_steps
@@ -275,12 +275,15 @@ class MolerDataset(Dataset):
 
                         if accumulated_num_steps > 1000:
                             generation_steps.append((accumulated_generation_steps, pkl_file_path))
-                            accumulated_generation_steps.clear()
+                            accumulated_generation_steps = []
                         pbar.update(1)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                futures = executor.map(self._save_processed_gen_step, ((molecule_gen_steps, pkl_file_path) for molecule_gen_steps, pkl_file_path in generation_steps))
-                results = list(tqdm(futures))        
-
+                        
+                future_saved_file_paths = [executor.submit(self._save_processed_gen_step, molecule_gen_steps, pkl_file_path) for molecule_gen_steps, pkl_file_path in generation_steps]
+                with tqdm(total = len(generation_steps)) as pbar:
+                    for future in concurrent.futures.as_completed(future_saved_file_paths):
+                        results += [future.result()]  
+                        pbar.update(1)
+                    
             self.generate_preprocessed_file_paths_csv(
                 preprocessed_file_paths_folder=os.path.join(
                     self._output_pyg_trace_dataset_parent_folder, self._split
@@ -290,7 +293,6 @@ class MolerDataset(Dataset):
 
     def _save_processed_gen_step(self, molecule_gen_steps, pkl_file_path):
         """Saves a list of trace steps corresponding to different molecules."""
-
 
         # for step_idx, step in enumerate(molecule_gen_steps):
         #     file_name = f'{pkl_file_path.split("/")[-1].split(".")[0]}_mol_{molecule_idx}_step_{step_idx}.pt'  # .pkl.gz'  #
@@ -311,6 +313,21 @@ class MolerDataset(Dataset):
             self._split,
             file_name,
         )
+        # batch them together
+        molecule_gen_steps = Batch.from_data_list(molecule_gen_steps, follow_batch = [
+            'correct_edge_choices',
+            'correct_edge_types',
+            'valid_edge_choices',
+            'valid_attachment_point_choices',
+            'correct_attachment_point_choice',
+            'correct_node_type_choices',
+            'original_graph_x',
+            'correct_first_node_type_choices',
+            # pick attachment points
+            'candidate_attachment_points',
+            # pick edge
+            'candidate_edge_targets'
+        ])
         with gzip.open(file_path, "wb") as shard_file_path:
             pickle.dump(molecule_gen_steps, shard_file_path)
 

@@ -37,12 +37,12 @@ if __name__ == '__main__':
     train_sampler = DuplicatedIndicesSamplerWrapper(
         sampler=train_random_sampler,
         frequency_mapping={
-            idx: length for idx, length in enumerate(molecule_gen_steps_lengths)
+            idx: length for idx, length in enumerate(train_molecule_gen_steps_lengths)
         },
     )
     train_dataloader = DataLoader(
         train_dataset,
-        batch_size=256,
+        batch_size=16,
         shuffle=False,
         sampler=train_sampler,
         follow_batch=[
@@ -72,7 +72,7 @@ if __name__ == '__main__':
     )
     valid_dataloader = DataLoader(
         valid_dataset,
-        batch_size=256,
+        batch_size=16,
         shuffle=False,
         sampler=valid_sampler,
         follow_batch=[
