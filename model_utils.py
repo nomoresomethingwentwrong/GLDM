@@ -1,9 +1,10 @@
 import torch
 from torch.nn import Linear, LeakyReLU, Dropout
-from torch_geometric.nn import RGATConv
+from torch_geometric.nn import RGATConv, GCNConv
 from torch_geometric.nn import aggr
 from dataclasses import dataclass
 import sys
+from enum import Enum, auto
 sys.path.append("../moler_reference")
 
 from molecule_generation.utils.training_utils import get_class_balancing_weights
@@ -18,6 +19,10 @@ class MoLeROutput:
     p: torch.Tensor
     q: torch.Tensor
 
+class LayerType(Enum):
+    GCNConv = auto()
+    RGATConv = auto()
+    
 
 class GenericGraphEncoder(torch.nn.Module):
     """
@@ -29,14 +34,16 @@ class GenericGraphEncoder(torch.nn.Module):
     def __init__(
         self,
         input_feature_dim,
-        num_relations=4,
+        num_relations=3,
         hidden_layer_feature_dim=64,
         num_layers=12,
-        layer_type="RGATConv",
+        layer_type=LayerType.GCNConv, #"RGATConv",
         use_intermediate_gnn_results=True,
     ):
         super(GenericGraphEncoder, self).__init__()
-        if layer_type == "RGATConv":
+        self._layer_type = layer_type
+
+        if self._layer_type == LayerType.RGATConv:
             self._first_layer = RGATConv(
                 in_channels=input_feature_dim,
                 out_channels=hidden_layer_feature_dim,
@@ -48,22 +55,49 @@ class GenericGraphEncoder(torch.nn.Module):
                     RGATConv(
                         in_channels=hidden_layer_feature_dim,
                         out_channels=hidden_layer_feature_dim,
-                        num_relations=num_relations,
+                        num_relations=num_relations, # additional parameter for RGATConv
                     )
                     for _ in range(num_layers)
                 ]
             )
             self._softmax_aggr = aggr.SoftmaxAggregation(learn=True)
             self._use_intermediate_gnn_results = use_intermediate_gnn_results
+
+        elif self._layer_type == LayerType.GCNConv:
+            self._first_layer = GCNConv(
+                in_channels=input_feature_dim,
+                out_channels=hidden_layer_feature_dim,
+            )
+
+            self._encoder_layers = torch.nn.ModuleList(
+                [
+                    GCNConv(
+                        in_channels=hidden_layer_feature_dim,
+                        out_channels=hidden_layer_feature_dim,
+                    )
+                    for _ in range(num_layers)
+                ]
+            )
+            self._softmax_aggr = aggr.SoftmaxAggregation(learn=True)
+            self._use_intermediate_gnn_results = use_intermediate_gnn_results
+            
         else:
             raise NotImplementedError
 
-    def forward(self, node_features, edge_index, edge_type, batch_index):
+    def forward(self, node_features, edge_index, edge_type_or_attr, batch_index):
         gnn_results = []
-        gnn_results += [self._first_layer(node_features, edge_index.long(), edge_type)]
 
-        for i, layer in enumerate(self._encoder_layers):
-            gnn_results += [layer(gnn_results[-1], edge_index.long(), edge_type)]
+        if self._layer_type == LayerType.RGATConv:
+            gnn_results += [self._first_layer(node_features, edge_index.long(), edge_type_or_attr)]
+
+            for layer in self._encoder_layers:
+                gnn_results += [layer(gnn_results[-1], edge_index.long(), edge_type_or_attr)]
+
+        elif self._layer_type == LayerType.GCNConv: # GCNConv does not require edge features or edge attrs
+            gnn_results += [self._first_layer(node_features, edge_index.long())]
+
+            for layer in self._encoder_layers:
+                gnn_results += [layer(gnn_results[-1], edge_index.long())]
 
         if self._use_intermediate_gnn_results:
             x = torch.cat(gnn_results, axis=-1)
