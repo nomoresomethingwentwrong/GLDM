@@ -16,6 +16,7 @@ from molecule_generation.utils.moler_decoding_utils import (
 from torch_geometric.data import Batch
 from dataset import MolerData
 import torch
+from dataset import EdgeRepresentation
 
 def construct_decoder_states(
     motif_vocabulary, 
@@ -212,13 +213,14 @@ def batch_decoder_states(
     decoder_states,#=decoder_states,
 #     init_batch_callback=init_atom_choice_batch,
     add_state_to_batch_callback,
+    type_of_edge_feature = EdgeRepresentation.edge_attr
 ):
     current_batch = []
     for decoder_state in decoder_states:
         node_features, node_categorical_features = decoder_state.get_node_features(
             atom_featurisers, motif_vocabulary
         )
-        mol_num_nodes = node_features.shape[0]
+        # mol_num_nodes = node_features.shape[0]
         
         decoder_state_features = {
             'latent_representation':decoder_state.molecule_representation, 
@@ -246,7 +248,12 @@ def batch_decoder_states(
             if len(edge_indexes) > 0
             else np.array(edge_indexes)
         )
-        decoder_state_features["edge_type"] = np.array(edge_types)
+
+        if type_of_edge_feature == EdgeRepresentation.edge_type:
+            decoder_state_features["partial_graph_edge_features"] = np.array(edge_types)
+        elif type_of_edge_feature == EdgeRepresentation.edge_attr:
+            edge_attr = edge_types
+            decoder_state_features["partial_graph_edge_features"] = np.array(edge_attr)
         
         decoder_state_features = add_state_to_batch_callback(decoder_state_features, decoder_state)
         

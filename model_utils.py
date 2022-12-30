@@ -1,6 +1,6 @@
 import torch
 from torch.nn import Linear, LeakyReLU, Dropout
-from torch_geometric.nn import RGATConv, GCNConv
+from torch_geometric.nn import RGATConv, GCNConv, LayerNorm, Sequential
 from torch_geometric.nn import aggr
 from dataclasses import dataclass
 import sys
@@ -50,16 +50,24 @@ class GenericGraphEncoder(torch.nn.Module):
                 num_relations=num_relations,
             )
 
+
             self._encoder_layers = torch.nn.ModuleList(
                 [
-                    RGATConv(
-                        in_channels=hidden_layer_feature_dim,
-                        out_channels=hidden_layer_feature_dim,
-                        num_relations=num_relations, # additional parameter for RGATConv
+                    Sequential('x, edge_index, edge_type', 
+                        [
+                            LayerNorm(in_channels=hidden_layer_feature_dim), # layer norm before activation as stated here https://www.reddit.com/r/learnmachinelearning/comments/5px958/should_layernorm_be_used_before_or_after_the/
+                            LeakyReLU(),
+                            (RGATConv(
+                                in_channels=hidden_layer_feature_dim,
+                                out_channels=hidden_layer_feature_dim,
+                                num_relations=num_relations, # additional parameter for RGATConv
+                            ), 'x, edge_index, edge_type -> x' ),
+                        ]
                     )
                     for _ in range(num_layers)
                 ]
             )
+
             self._softmax_aggr = aggr.SoftmaxAggregation(learn=True)
             self._use_intermediate_gnn_results = use_intermediate_gnn_results
 
@@ -69,15 +77,22 @@ class GenericGraphEncoder(torch.nn.Module):
                 out_channels=hidden_layer_feature_dim,
             )
 
+
             self._encoder_layers = torch.nn.ModuleList(
                 [
-                    GCNConv(
-                        in_channels=hidden_layer_feature_dim,
-                        out_channels=hidden_layer_feature_dim,
+                    Sequential('x, edge_index', [
+                            (LayerNorm(in_channels=hidden_layer_feature_dim), 'x -> x'), # layer norm before activation as stated here https://www.reddit.com/r/learnmachinelearning/comments/5px958/should_layernorm_be_used_before_or_after_the/
+                            LeakyReLU(),
+                            (GCNConv(
+                                in_channels=hidden_layer_feature_dim,
+                                out_channels=hidden_layer_feature_dim,
+                            ),'x, edge_index -> x'),
+                        ]
                     )
                     for _ in range(num_layers)
                 ]
             )
+
             self._softmax_aggr = aggr.SoftmaxAggregation(learn=True)
             self._use_intermediate_gnn_results = use_intermediate_gnn_results
             

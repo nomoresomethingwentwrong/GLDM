@@ -29,7 +29,7 @@ class GraphEncoder(torch.nn.Module):
 
     @property
     def gnn_layer_type(self):
-        self._gnn_layer_type
+        return self._gnn_layer_type
 
     def forward(
         self,
@@ -84,7 +84,7 @@ class PartialGraphEncoder(torch.nn.Module):
 
     @property
     def gnn_layer_type(self):
-        self._gnn_layer_type
+        return self._gnn_layer_type
 
     def forward(
         self,
