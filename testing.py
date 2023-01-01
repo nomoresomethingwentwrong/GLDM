@@ -19,10 +19,13 @@ if __name__ == '__main__':
     #     output_pyg_trace_dataset_parent_folder="/data/ongh0068/l1000/pyg_output_playground",
     #     split=train_split,
     # )
+    raw_moler_trace_dataset_parent_folder = '/data/ongh0068/guacamol/trace_dir'
+    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/l1000/already_batched"
+
     valid_dataset = MolerDataset(
         root="/data/ongh0068",
-        raw_moler_trace_dataset_parent_folder='/data/ongh0068/guacamol/trace_dir',#"/data/ongh0068/l1000/trace_playground",
-        output_pyg_trace_dataset_parent_folder="/data/ongh0068/l1000/test_thread2",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,#"/data/ongh0068/l1000/trace_playground",
+        output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=valid_split,
     )
 
@@ -58,7 +61,7 @@ if __name__ == '__main__':
     # )
 
     valid_processed_file_metadata = (
-        f"/data/ongh0068/l1000/pyg_output_playground/{valid_split}/processed_file_paths.csv"
+        f"{output_pyg_trace_dataset_parent_folder}/{valid_split}/processed_file_paths.csv"
     )
     # valid_molecule_gen_steps_lengths = pd.read_csv(valid_processed_file_metadata)[
     #     "molecule_gen_steps_length"
