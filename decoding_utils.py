@@ -242,13 +242,13 @@ def batch_decoder_states(
                 self loop => 3
                 """
                 edge_types += [edge_type_idx] * len(adj_list)
-#         print(edge_indexes)
+            
+        
         decoder_state_features["edge_index"] = (
             np.concatenate(edge_indexes, 1)
             if len(edge_indexes) > 0
-            else np.array(edge_indexes)
+            else np.array([[], []], dtype=np.int32)
         )
-
         if type_of_edge_feature == EdgeRepresentation.edge_type:
             decoder_state_features["partial_graph_edge_features"] = np.array(edge_types)
         elif type_of_edge_feature == EdgeRepresentation.edge_attr:

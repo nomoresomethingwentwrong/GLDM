@@ -8,17 +8,19 @@ from dataset import MolerDataset
 
 
 # Now with actually batching the pyg objects themselves (each with > 5000 trace steps), we get 1.4GB 
-valid_dataset = MolerDataset(
-    root="/data/ongh0068",
-    raw_moler_trace_dataset_parent_folder='/data/ongh0068/guacamol/trace_dir',#"/data/ongh0068/l1000/trace_playground",
-    output_pyg_trace_dataset_parent_folder="/data/ongh0068/l1000/test_thread2",
-    split="valid_0",
-)
 
-# train_dataset = MolerDataset(
+# same disk space with > 1000 steps
+# valid_dataset = MolerDataset(
 #     root="/data/ongh0068",
 #     raw_moler_trace_dataset_parent_folder='/data/ongh0068/guacamol/trace_dir',#"/data/ongh0068/l1000/trace_playground",
-#     output_pyg_trace_dataset_parent_folder="/data/ongh0068/l1000/pyg_output_playground",
-#     split="train_0",
+#     output_pyg_trace_dataset_parent_folder="/data/ongh0068/l1000/already_batched",
+#     split="valid_0",
 # )
+
+train_dataset = MolerDataset(
+    root="/data/ongh0068",
+    raw_moler_trace_dataset_parent_folder='/data/ongh0068/guacamol/trace_dir',#"/data/ongh0068/l1000/trace_playground",
+    output_pyg_trace_dataset_parent_folder="/data/ongh0068/l1000/already_batched",
+    split="train_0",
+)
 
