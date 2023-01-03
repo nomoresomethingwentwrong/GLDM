@@ -329,7 +329,7 @@ class BaseModel(LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=1e-4)
+        return torch.optim.Adam(self.parameters(), lr=1e-3)
 
     def _decoder_pick_first_atom_types(
         self,
@@ -692,7 +692,7 @@ class BaseModel(LightningModule):
     def _pick_new_atom_types_for_batch(
         self, batch, num_samples=1, sampling_mode= 'greedy'
     ):
-        # print(batch)
+        
         with torch.no_grad():
             graph_representations, _ = self.partial_graph_encoder(
                 partial_graph_node_categorical_features = batch.node_categorical_features,
@@ -824,7 +824,7 @@ class BaseModel(LightningModule):
             if (len(require_atom_states) + len(require_bond_states)) == 0:
                 # print("I: Decoding finished")
                 break
-            # print([Chem.MolToSmiles(require_atom_states[i].molecule) for i in range(len(require_atom_states))])
+            
 
             # Step 2: For states that require a new atom, try to pick one:
             node_pick_results = self._decoder_pick_new_atom_types(
@@ -832,7 +832,7 @@ class BaseModel(LightningModule):
                 num_samples=beam_size,
                 sampling_mode=sampling_mode,
             )
-            print('here', [Chem.MolToSmiles(require_atom_states[i].molecule) for i in range(len(require_atom_states))])
+            
             for decoder_state, (node_type_picks, node_type_logprobs) in zip(
                 require_atom_states, node_pick_results
             ):

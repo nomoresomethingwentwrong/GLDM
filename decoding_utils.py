@@ -258,7 +258,7 @@ def batch_decoder_states(
         decoder_state_features = add_state_to_batch_callback(decoder_state_features, decoder_state)
         
         decoder_state_features = _to_tensor_moler(decoder_state_features, ignore = ['latent_representation'])
-#         print(decoder_state_features)
+
         current_batch += [(MolerData(**decoder_state_features), decoder_state)]
         if len(current_batch) == batch_size:
             tmp = current_batch

@@ -103,20 +103,18 @@ class GenericGraphEncoder(torch.nn.Module):
         gnn_results = []
         
         if self._layer_type == LayerType.RGATConv:
-            print('here2')
+            
             gnn_results += [self._first_layer(node_features, edge_index.long(), edge_type_or_attr)]
 
             for layer in self._encoder_layers:
                 gnn_results += [layer(gnn_results[-1], edge_index.long(), edge_type_or_attr)]
 
         elif 'GCNConv' in str(self._layer_type):#self._layer_type == LayerType.GCNConv: # GCNConv does not require edge features or edge attrs
-            print('edge_index', edge_index.long())
+            
             gnn_results += [self._first_layer(node_features, edge_index.long())]
 
             for layer in self._encoder_layers:
                 gnn_results += [layer(gnn_results[-1], edge_index.long())]
-        else:
-            print(str(self._layer_type),LayerType.GCNConv,  self._layer_type is LayerType.GCNConv)
         
         if self._use_intermediate_gnn_results:
             x = torch.cat(gnn_results, axis=-1)

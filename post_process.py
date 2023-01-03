@@ -21,6 +21,20 @@ train_dataset = MolerDataset(
     root="/data/ongh0068",
     raw_moler_trace_dataset_parent_folder='/data/ongh0068/guacamol/trace_dir',#"/data/ongh0068/l1000/trace_playground",
     output_pyg_trace_dataset_parent_folder="/data/ongh0068/l1000/already_batched",
-    split="train_0",
+    split="train_1000",
+)
+
+train_dataset = MolerDataset(
+    root="/data/ongh0068",
+    raw_moler_trace_dataset_parent_folder='/data/ongh0068/guacamol/trace_dir',#"/data/ongh0068/l1000/trace_playground",
+    output_pyg_trace_dataset_parent_folder="/data/ongh0068/l1000/already_batched",
+    split="train_2000",
+)
+
+train_dataset = MolerDataset(
+    root="/data/ongh0068",
+    raw_moler_trace_dataset_parent_folder='/data/ongh0068/guacamol/trace_dir',#"/data/ongh0068/l1000/trace_playground",
+    output_pyg_trace_dataset_parent_folder="/data/ongh0068/l1000/already_batched",
+    split="train_3000",
 )
 
