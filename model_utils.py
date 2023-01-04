@@ -1,9 +1,13 @@
 import torch
 from torch.nn import Linear, LeakyReLU, Dropout
-from torch_geometric.nn import RGATConv
+from torch_geometric.nn import RGATConv, GCNConv, LayerNorm, Sequential
 from torch_geometric.nn import aggr
 from dataclasses import dataclass
+import sys
+from enum import Enum, auto
+sys.path.append("../moler_reference")
 
+from molecule_generation.utils.training_utils import get_class_balancing_weights
 
 @dataclass
 class MoLeROutput:
@@ -15,6 +19,10 @@ class MoLeROutput:
     p: torch.Tensor
     q: torch.Tensor
 
+class LayerType(Enum):
+    GCNConv = auto()
+    RGATConv = auto()
+    
 
 class GenericGraphEncoder(torch.nn.Module):
     """
@@ -26,42 +34,88 @@ class GenericGraphEncoder(torch.nn.Module):
     def __init__(
         self,
         input_feature_dim,
-        num_relations=4,
+        num_relations=3,
         hidden_layer_feature_dim=64,
         num_layers=12,
-        layer_type="RGATConv",
+        layer_type=LayerType.GCNConv, #"RGATConv",
         use_intermediate_gnn_results=True,
     ):
         super(GenericGraphEncoder, self).__init__()
-        if layer_type == "RGATConv":
+        self._layer_type = layer_type
+
+        if self._layer_type == LayerType.RGATConv:
             self._first_layer = RGATConv(
                 in_channels=input_feature_dim,
                 out_channels=hidden_layer_feature_dim,
                 num_relations=num_relations,
             )
 
+
             self._encoder_layers = torch.nn.ModuleList(
                 [
-                    RGATConv(
-                        in_channels=hidden_layer_feature_dim,
-                        out_channels=hidden_layer_feature_dim,
-                        num_relations=num_relations,
+                    Sequential('x, edge_index, edge_type', 
+                        [
+                            LayerNorm(in_channels=hidden_layer_feature_dim), # layer norm before activation as stated here https://www.reddit.com/r/learnmachinelearning/comments/5px958/should_layernorm_be_used_before_or_after_the/
+                            LeakyReLU(),
+                            (RGATConv(
+                                in_channels=hidden_layer_feature_dim,
+                                out_channels=hidden_layer_feature_dim,
+                                num_relations=num_relations, # additional parameter for RGATConv
+                            ), 'x, edge_index, edge_type -> x' ),
+                        ]
                     )
                     for _ in range(num_layers)
                 ]
             )
+
             self._softmax_aggr = aggr.SoftmaxAggregation(learn=True)
             self._use_intermediate_gnn_results = use_intermediate_gnn_results
+
+        elif self._layer_type == LayerType.GCNConv:
+            self._first_layer = GCNConv(
+                in_channels=input_feature_dim,
+                out_channels=hidden_layer_feature_dim,
+            )
+
+
+            self._encoder_layers = torch.nn.ModuleList(
+                [
+                    Sequential('x, edge_index', [
+                            (LayerNorm(in_channels=hidden_layer_feature_dim), 'x -> x'), # layer norm before activation as stated here https://www.reddit.com/r/learnmachinelearning/comments/5px958/should_layernorm_be_used_before_or_after_the/
+                            LeakyReLU(),
+                            (GCNConv(
+                                in_channels=hidden_layer_feature_dim,
+                                out_channels=hidden_layer_feature_dim,
+                            ),'x, edge_index -> x'),
+                        ]
+                    )
+                    for _ in range(num_layers)
+                ]
+            )
+
+            self._softmax_aggr = aggr.SoftmaxAggregation(learn=True)
+            self._use_intermediate_gnn_results = use_intermediate_gnn_results
+            
         else:
             raise NotImplementedError
 
-    def forward(self, node_features, edge_index, edge_type, batch_index):
+    def forward(self, node_features, edge_index, edge_type_or_attr, batch_index):
         gnn_results = []
-        gnn_results += [self._first_layer(node_features, edge_index.long(), edge_type)]
+        
+        if self._layer_type == LayerType.RGATConv:
+            
+            gnn_results += [self._first_layer(node_features, edge_index.long(), edge_type_or_attr)]
 
-        for i, layer in enumerate(self._encoder_layers):
-            gnn_results += [layer(gnn_results[-1], edge_index.long(), edge_type)]
+            for layer in self._encoder_layers:
+                gnn_results += [layer(gnn_results[-1], edge_index.long(), edge_type_or_attr)]
 
+        elif 'GCNConv' in str(self._layer_type):#self._layer_type == LayerType.GCNConv: # GCNConv does not require edge features or edge attrs
+            
+            gnn_results += [self._first_layer(node_features, edge_index.long())]
+
+            for layer in self._encoder_layers:
+                gnn_results += [layer(gnn_results[-1], edge_index.long())]
+        
         if self._use_intermediate_gnn_results:
             x = torch.cat(gnn_results, axis=-1)
             graph_representations = self._softmax_aggr(x, batch_index)
@@ -112,37 +166,33 @@ class GenericMLP(torch.nn.Module):
         x = self._output_layer(x)
         return x
 
+def get_class_weights(dataset, class_weight_factor=1.0):
+    next_node_type_distribution = dataset.metadata.get("train_next_node_type_distribution")
+    atom_type_distribution = dataset.metadata.get("train_atom_type_distribution")
+    num_node_types = dataset.num_node_types
+    atom_type_nums = [
+        atom_type_distribution[dataset.node_type_index_to_string[type_idx]]
+        for type_idx in range(num_node_types)
+    ]
+    atom_type_nums.append(next_node_type_distribution["None"])
+    class_weights = get_class_balancing_weights(
+        class_counts=atom_type_nums, class_weight_factor=class_weight_factor
+    )
+    return class_weights
 
-def get_params():
-    return {'full_graph_encoder': {'input_feature_dim': 32,
-  'atom_or_motif_vocab_size': 139},
- 'partial_graph_encoder': {'input_feature_dim': 32,'atom_or_motif_vocab_size': 139},
+def get_params(dataset):
+    return {'full_graph_encoder': {'input_feature_dim': dataset[0].x.shape[-1],
+  'atom_or_motif_vocab_size': len(dataset.node_type_index_to_string)},
+ 'partial_graph_encoder': {'input_feature_dim':  dataset[0].x.shape[-1],'atom_or_motif_vocab_size': len(dataset.node_type_index_to_string)},
  'mean_log_var_mlp': {'input_feature_dim': 832, 'output_size': 1024},
  'decoder': {'node_type_selector': {'input_feature_dim': 1344,
-   'output_size': 140},
-  'node_type_loss_weights': torch.tensor([10.0000,  0.1000,  0.1000,  0.1000,  0.7879,  0.4924,  0.6060, 10.0000,
-           7.8786, 10.0000,  7.8786,  0.1000,  0.6565,  0.6565,  0.9848,  0.8754,
-           0.8754,  1.1255,  0.9848,  1.3131,  1.5757,  1.9696,  1.5757,  1.9696,
-           2.6262,  1.9696,  1.9696,  7.8786,  7.8786,  3.9393,  2.6262,  2.6262,
-           2.6262,  2.6262,  3.9393,  7.8786,  7.8786,  7.8786,  3.9393,  7.8786,
-          10.0000,  7.8786,  3.9393,  3.9393,  3.9393,  3.9393,  3.9393,  3.9393,
-           3.9393,  3.9393,  3.9393,  3.9393,  3.9393,  3.9393,  7.8786,  7.8786,
-          10.0000, 10.0000,  7.8786,  7.8786, 10.0000,  7.8786,  7.8786, 10.0000,
-           7.8786,  7.8786, 10.0000,  7.8786, 10.0000,  7.8786,  7.8786, 10.0000,
-           7.8786,  7.8786,  7.8786, 10.0000, 10.0000,  7.8786,  7.8786,  7.8786,
-           7.8786,  7.8786, 10.0000, 10.0000, 10.0000, 10.0000,  7.8786, 10.0000,
-          10.0000, 10.0000,  7.8786, 10.0000,  7.8786, 10.0000,  7.8786, 10.0000,
-          10.0000, 10.0000, 10.0000, 10.0000, 10.0000, 10.0000, 10.0000,  7.8786,
-          10.0000,  7.8786,  7.8786,  7.8786,  7.8786, 10.0000,  7.8786, 10.0000,
-          10.0000, 10.0000,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,
-           7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,
-           7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,  7.8786,
-           7.8786,  7.8786,  7.8786,  0.1000]).cuda(),
+   'output_size': len(dataset.node_type_index_to_string)+1},
+  'node_type_loss_weights': torch.tensor(get_class_weights(dataset)).cuda(),
   'no_more_edges_repr': (1, 835),
   'edge_candidate_scorer': {'input_feature_dim': 3011, 'output_size': 1},
   'edge_type_selector': {'input_feature_dim': 3011, 'output_size': 3},
   'attachment_point_selector': {'input_feature_dim': 2176, 'output_size': 1},
-  'first_node_type_selector': {'input_feature_dim': 512, 'output_size': 139}},
+  'first_node_type_selector': {'input_feature_dim': 512, 'output_size': len(dataset.node_type_index_to_string)}},
  'latent_sample_strategy': 'per_graph',
  'latent_repr_dim': 512,
  'latent_repr_size': 512}

@@ -4,11 +4,14 @@ from pytorch_lightning import LightningModule
 from model_utils import GenericGraphEncoder, GenericMLP, MoLeROutput
 from encoder import GraphEncoder, PartialGraphEncoder
 
+from rdkit import Chem
 from decoder import MLPDecoder
 import torch
 import numpy as np
 from utils import BIG_NUMBER
 from decoding_utils import construct_decoder_states, sample_indices_from_logprobs, batch_decoder_states
+
+
 sys.path.append("../moler_reference")
 from molecule_generation.utils.training_utils import get_class_balancing_weights
 
@@ -190,7 +193,7 @@ class BaseModel(LightningModule):
             original_graph_node_categorical_features=batch.original_graph_node_categorical_features,
             node_features=batch.original_graph_x.float(),
             edge_index=batch.original_graph_edge_index,
-            edge_type=batch.original_graph_edge_type.int(),
+            edge_features=batch.original_graph_edge_features, # can be edge_type or edge_attr
             batch_index=batch.original_graph_x_batch,
         )
 
@@ -199,7 +202,7 @@ class BaseModel(LightningModule):
             partial_graph_node_categorical_features = batch.partial_node_categorical_features,
             node_features = batch.x,
             edge_index = batch.edge_index.long(), 
-            edge_type = batch.edge_type, 
+            edge_features = batch.partial_graph_edge_features, 
             graph_to_focus_node_map = batch.focus_node,
             candidate_attachment_points = batch.valid_attachment_point_choices,
             batch_index = batch.batch
@@ -223,7 +226,7 @@ class BaseModel(LightningModule):
             graphs_requiring_node_choices=batch.correct_node_type_choices_batch.unique(),
             # edge selection
             node_representations=node_representations,
-            num_graphs_in_batch=len(batch.ptr) - 1,
+            num_graphs_in_batch=len(batch.ptr) -1,
             focus_node_idx_in_batch=batch.focus_node,
             node_to_graph_map=batch.batch,
             candidate_edge_targets=batch.valid_edge_choices[:, 1].long(),
@@ -244,9 +247,9 @@ class BaseModel(LightningModule):
         )
 
     def compute_loss(self, moler_output, batch):
-        num_correct_node_type_choices = (
-            batch.correct_node_type_choices_ptr.unique().shape[-1] - 1
-        )
+        # num_correct_node_type_choices = (
+        #     batch.correct_node_type_choices_ptr.unique().shape[-1] - 1
+        # )
         node_type_multihot_labels = batch.correct_node_type_choices#.view(
         #     num_correct_node_type_choices, -1
         # )
@@ -261,7 +264,7 @@ class BaseModel(LightningModule):
             first_node_type_logits = moler_output.first_node_type_logits,
             first_node_type_multihot_labels = first_node_type_multihot_labels,
             # edge selection
-            num_graphs_in_batch=len(batch.ptr) - 1,
+            num_graphs_in_batch=len(batch.ptr) -1,
             node_to_graph_map=batch.batch,
             candidate_edge_targets=batch.valid_edge_choices[:, 1].long(),
             edge_candidate_logits=moler_output.edge_candidate_logits,  # as is
@@ -301,23 +304,27 @@ class BaseModel(LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
-        self.log_dict(
-            {f"train_{k}": v for k, v in logs.items()},
-            # prog_bar=True,
-            on_step=True,
-            on_epoch=False,
-            batch_size=16,
+        self.log(
+            "train_loss", 
+            logs, batch_size=1000
+            # {f"train_{k}": v for k, v in logs.items()},
+            # # prog_bar=True,
+            # on_step=True,
+            # on_epoch=False,
+            # batch_size=16,
         )
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
-        self.log_dict(
-            {f"val_{k}": v for k, v in logs.items()},
-            prog_bar=True,
-            on_step=True,
-            on_epoch=False,
-            batch_size=16,
+        self.log(
+            "val_loss", 
+            logs, batch_size=1000
+            # {f"val_{k}": v for k, v in logs.items()},
+            # prog_bar=True,
+            # on_step=True,
+            # on_epoch=False,
+            # batch_size=16,
         )
         return loss
 
@@ -382,11 +389,12 @@ class BaseModel(LightningModule):
         
         candidate_attachment_points = batch.candidate_attachment_points
         
+
         graph_representations, node_representations = self.partial_graph_encoder(
             node_features=batch.x,
             partial_graph_node_categorical_features=batch.node_categorical_features,
             edge_index=batch.edge_index,
-            edge_type = batch.edge_type, 
+            edge_features = batch.partial_graph_edge_features, 
             # Here we choose an arbitrary attachment point as a focus atom; this does not matter
             # since later all candidate attachment points are marked with the in-focus bit.
             graph_to_focus_node_map=initial_focus_atoms,
@@ -483,7 +491,7 @@ class BaseModel(LightningModule):
                 node_features=batch.x,
                 partial_graph_node_categorical_features=batch.node_categorical_features,
                 edge_index=batch.edge_index,
-                edge_type = batch.edge_type, 
+                edge_features = batch.partial_graph_edge_features, 
                 # Here we choose an arbitrary attachment point as a focus atom; this does not matter
                 # since later all candidate attachment points are marked with the in-focus bit.
                 graph_to_focus_node_map=batch.focus_atoms,
@@ -498,7 +506,7 @@ class BaseModel(LightningModule):
                 input_molecule_representations=batch.latent_representation,
                 partial_graph_representations=graph_representations,
                 node_representations=node_representations,
-                num_graphs_in_batch=len(batch.ptr) - 1,
+                num_graphs_in_batch=len(batch.ptr) -1,
                 focus_node_idx_in_batch=batch.focus_atoms,
                 node_to_graph_map=batch.batch,
                 candidate_edge_targets=batch_candidate_edge_targets.long(),
@@ -684,12 +692,13 @@ class BaseModel(LightningModule):
     def _pick_new_atom_types_for_batch(
         self, batch, num_samples=1, sampling_mode= 'greedy'
     ):
+        
         with torch.no_grad():
             graph_representations, _ = self.partial_graph_encoder(
                 partial_graph_node_categorical_features = batch.node_categorical_features,
                 node_features = batch.x,
                 edge_index = batch.edge_index.long(), 
-                edge_type = batch.edge_type.int(), 
+                edge_features = batch.partial_graph_edge_features, 
                 # Note: This whole prior_focus_atom is a bit of a hack. During training, we use the
                 # same graph for predict-no-more-bonds and predict-next-atom-type. Hence, during
                 # training, we always have at least one in-focus node per graph, and not
@@ -757,7 +766,7 @@ class BaseModel(LightningModule):
         )
 
         decoder_states = decoder_states_non_empty
-
+        
         for decoder_state, (first_node_type_picks, first_node_type_logprobs) in zip(
             decoder_states_empty, first_node_pick_results
         ):
@@ -815,6 +824,7 @@ class BaseModel(LightningModule):
             if (len(require_atom_states) + len(require_bond_states)) == 0:
                 # print("I: Decoding finished")
                 break
+            
 
             # Step 2: For states that require a new atom, try to pick one:
             node_pick_results = self._decoder_pick_new_atom_types(
@@ -822,7 +832,7 @@ class BaseModel(LightningModule):
                 num_samples=beam_size,
                 sampling_mode=sampling_mode,
             )
-
+            
             for decoder_state, (node_type_picks, node_type_logprobs) in zip(
                 require_atom_states, node_pick_results
             ):

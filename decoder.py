@@ -101,14 +101,14 @@ class MLPDecoder(torch.nn.Module):
         ).sum()  # Shape [NTP]
         per_correct_no_node_decision_neglogprob = -(
             per_node_decision_logprobs[:, -1]
-            * torch.squeeze(no_node_decision_correct).type(torch.FloatTensor)
+            * torch.squeeze(no_node_decision_correct).float()
         )  # Shape [NTP]
 
         if self._node_type_loss_weights is not None:
             per_correct_node_decision_normalised_neglogprob *= (
-                self._node_type_loss_weights[:-1]
+                self._node_type_loss_weights[:-1].to(self.dummy_param.device)
             )
-            per_correct_no_node_decision_neglogprob *= self._node_type_loss_weights[-1]
+            per_correct_no_node_decision_neglogprob *= self._node_type_loss_weights[-1].to(self.dummy_param.device)
 
         # Loss is the sum of the masked (no) node decisions, averaged over number of decisions made:
         total_node_type_loss = torch.sum(
@@ -139,7 +139,7 @@ class MLPDecoder(torch.nn.Module):
             per_decision_num_correct_choices=per_graph_num_correct_choices,
         ) 
         if self._node_type_loss_weights is not None:
-            per_graph_normalised_neglogprob *= self._node_type_loss_weights[:-1]
+            per_graph_normalised_neglogprob *= self._node_type_loss_weights[:-1].to(self.dummy_param.device)
             
         first_node_type_loss = safe_divide_loss(
             torch.sum(per_graph_normalised_neglogprob),
