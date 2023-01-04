@@ -306,7 +306,7 @@ class BaseModel(LightningModule):
         loss, logs = self.step(batch)
         self.log(
             "train_loss", 
-            logs
+            logs, batch_size=1000
             # {f"train_{k}": v for k, v in logs.items()},
             # # prog_bar=True,
             # on_step=True,
@@ -319,7 +319,7 @@ class BaseModel(LightningModule):
         loss, logs = self.step(batch)
         self.log(
             "val_loss", 
-            logs
+            logs, batch_size=1000
             # {f"val_{k}": v for k, v in logs.items()},
             # prog_bar=True,
             # on_step=True,
