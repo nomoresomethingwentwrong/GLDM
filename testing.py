@@ -4,7 +4,7 @@ from model import BaseModel
 from model_utils import get_params
 from pytorch_lightning import Trainer
 from torch.utils.data import ConcatDataset
-import datetime
+from datetime import datetime
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     )
 
     params = get_params(dataset=train_dataset1)  # train_dataset)
-    model = BaseModel(params, valid_dataset)  # train_dataset)
+    model = BaseModel(params, valid_dataset, num_train_batches = len(train_dataloader))  # train_dataset)
 
     # Get current time for folder path.
     now = str(datetime.now()).replace(" ", "_").replace(":", "_")
@@ -101,8 +101,8 @@ if __name__ == "__main__":
 
     trainer = Trainer(
         accelerator="gpu",
-        max_epochs=50,
-        devices=[2],
+        max_epochs=1,
+        devices=[3],
         callbacks=[checkpoint_callback, lr_monitor, early_stopping],
         logger=tensorboard_logger,
     )  # overfit_batches=1)
