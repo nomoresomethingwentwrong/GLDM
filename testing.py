@@ -99,7 +99,7 @@ if __name__ == "__main__":
         monitor="val_loss",
         dirpath=f"../{now}",
         mode="min",
-        filename="{epoch:02d}-{val_f1:.2f}",
+        filename="{epoch:02d}-{val_loss:.2f}",
     )
 
     trainer = Trainer(

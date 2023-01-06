@@ -18,8 +18,8 @@ class MoLeROutput:
     edge_candidate_logits: torch.Tensor
     edge_type_logits: torch.Tensor
     attachment_point_selection_logits: torch.Tensor
-    p: torch.Tensor
-    q: torch.Tensor
+    mu: torch.Tensor
+    log_var: torch.Tensor
 
 
 class LayerType(Enum):
@@ -235,7 +235,7 @@ def get_params(dataset):
         "latent_repr_dim": 512,
         "latent_repr_size": 512,
         "training_hyperparams": {
-            "max_lr": 1e-3,
+            "max_lr": 1e-2,
             "div_factor": 25,
             "three_phase": True,
         },

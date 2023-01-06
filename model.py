@@ -29,7 +29,7 @@ from molecule_generation.utils.moler_decoding_utils import (
 
 
 class BaseModel(LightningModule):
-    def __init__(self, params, dataset, num_train_batches, batch_size=1):
+    def __init__(self, params, dataset, num_train_batches=1, batch_size=1):
         """Params is a nested dictionary with the relevant parameters."""
         super(BaseModel, self).__init__()
         self._init_params(params, dataset)
@@ -176,21 +176,16 @@ class BaseModel(LightningModule):
         log_var = mean_and_log_var[:, self.latent_dim :]  # Shape: [V, MD]
 
         # result_representations: shape [num_partial_graphs, latent_repr_dim]
-        p, q, z = self.sample(mu, log_var)
+        z = self.reparametrize(mu, log_var)
 
-        return p, q, z
+        return mu, log_var, z
 
-    def sample(self, mu, log_var):
+    def reparametrize(self, mu, log_var):
         """Samples a different noise vector for each partial graph.
         TODO: look into the other sampling strategies."""
-        std = torch.exp(log_var / 2)
-        p = torch.distributions.Normal(
-            torch.zeros_like(mu, device=self.full_graph_encoder._dummy_param.device),
-            torch.ones_like(std, device=self.full_graph_encoder._dummy_param.device),
-        )
-        q = torch.distributions.Normal(mu, std)
-        z = q.rsample()
-        return p, q, z
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        return eps * std + mu
 
     def forward(self, batch):
         moler_output = self._run_step(batch)
@@ -224,7 +219,7 @@ class BaseModel(LightningModule):
         )
 
         # Apply latent sampling strategy
-        p, q, latent_representation = self.sample_from_latent_repr(
+        mu, log_var, latent_representation = self.sample_from_latent_repr(
             input_molecule_representations
         )
 
@@ -257,8 +252,8 @@ class BaseModel(LightningModule):
             edge_candidate_logits=edge_candidate_logits,
             edge_type_logits=edge_type_logits,
             attachment_point_selection_logits=attachment_point_selection_logits,
-            p=p,
-            q=q,
+            mu=mu,
+            log_var=log_var,
         )
 
     def compute_loss(self, moler_output, batch):
@@ -306,15 +301,24 @@ class BaseModel(LightningModule):
 
         decoder_loss = self.compute_loss(moler_output=moler_output, batch=batch)
 
-        kl = torch.distributions.kl_divergence(moler_output.q, moler_output.p)
-        kl = kl.mean()
+        kld_loss = torch.mean(
+            -0.5
+            * torch.sum(
+                1
+                + moler_output.log_var
+                - moler_output.mu**2
+                - moler_output.log_var.exp(),
+                dim=1,
+            ),
+            dim=0,
+        )
         # kl *= self.kl_coeff
 
-        loss = kl + decoder_loss
+        loss = kld_loss + decoder_loss
 
         logs = {
             "decoder_loss": decoder_loss,
-            "kl": kl,
+            "kl": kld_loss,
             "loss": loss,
         }
         return loss, logs
