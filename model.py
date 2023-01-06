@@ -29,6 +29,10 @@ class BaseModel(LightningModule):
         """Params is a nested dictionary with the relevant parameters."""
         super(BaseModel, self).__init__()
         self._init_params(params, dataset)
+        if 'training_hyperparams' in params:
+            self._training_hyperparams = params['training_hyperparams']
+        else:
+            self._training_hyperparams = None
         self._params = params
         # Graph encoders
         self._full_graph_encoder = GraphEncoder(**self._params["full_graph_encoder"])
@@ -329,7 +333,22 @@ class BaseModel(LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self._training_hyperparams['max_lr'])
+        lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer=optimizer,
+            max_lr= self._training_hyperparams['max_lr'],
+            div_factor = self._training_hyperparams['div_factor'],
+            three_phase=self._training_hyperparams['three_phase']
+        )
+
+        lr_scheduler_params = {}
+        lr_scheduler_params['scheduler'] = lr_scheduler
+
+        lr_scheduler_params['interval'] = 'step'
+        frequency_of_lr_scheduler_step = self.trainer.max_epochs
+        lr_scheduler_params['frequency'] = frequency_of_lr_scheduler_step  # number of batches to wait before calling lr_scheduler.step()
+        
+        return lr_scheduler_params
 
     def _decoder_pick_first_atom_types(
         self,
