@@ -172,7 +172,7 @@ class BaseModel(LightningModule):
         """Samples a different noise vector for each partial graph.
         TODO: look into the other sampling strategies."""
         std = torch.exp(log_var / 2)
-        p = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(std))
+        p = torch.distributions.Normal(torch.zeros_like(mu, device=self.full_graph_encoder._dummy_param.device), torch.ones_like(std, device=self.full_graph_encoder._dummy_param.device))
         q = torch.distributions.Normal(mu, std)
         z = q.rsample()
         return p, q, z
@@ -495,7 +495,7 @@ class BaseModel(LightningModule):
                 # Here we choose an arbitrary attachment point as a focus atom; this does not matter
                 # since later all candidate attachment points are marked with the in-focus bit.
                 graph_to_focus_node_map=batch.focus_atoms,
-                candidate_attachment_points=torch.zeros(size = (0,)),
+                candidate_attachment_points=torch.zeros(size = (0,), device = self.full_graph_encoder._dummy_param.device),
                 batch_index = batch.batch
             )
 
@@ -704,7 +704,7 @@ class BaseModel(LightningModule):
                 # training, we always have at least one in-focus node per graph, and not
                 # matching that would be confusing to the model. Hence, we simulate this behaviour:
                 graph_to_focus_node_map = batch.prior_focus_atoms,
-                candidate_attachment_points = torch.zeros(size = (0,)),
+                candidate_attachment_points = torch.zeros(size = (0,), device=self.full_graph_encoder._dummy_param.device),
                 batch_index = batch.batch
             )
 

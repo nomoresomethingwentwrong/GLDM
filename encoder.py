@@ -106,14 +106,14 @@ class PartialGraphEncoder(torch.nn.Module):
             [graph_to_focus_node_map, candidate_attachment_points], axis=0
         )
 
-        node_is_in_focus_bit_zeros = torch.zeros(node_features.shape[0], 1).to(self._dummy_param.device)
+        node_is_in_focus_bit_zeros = torch.zeros((node_features.shape[0], 1), device = self._dummy_param.device)
 
         node_is_in_focus_bit = node_is_in_focus_bit_zeros.index_add_(
             dim = 0, 
             index = nodes_to_set_in_focus_bit.int().to(self._dummy_param.device), 
-            source = torch.ones(nodes_to_set_in_focus_bit.shape[0], 1).to(self._dummy_param.device)
+            source = torch.ones((nodes_to_set_in_focus_bit.shape[0], 1), device = self._dummy_param.device)
         )
-        node_is_in_focus_bit = node_is_in_focus_bit.minimum(torch.ones(1).to(self._dummy_param.device))
+        node_is_in_focus_bit = node_is_in_focus_bit.minimum(torch.ones(1, device = self._dummy_param.device))
         initial_node_features = torch.cat([initial_node_features, node_is_in_focus_bit], axis=-1)
 
         if self.gnn_layer_type == LayerType.RGATConv:
