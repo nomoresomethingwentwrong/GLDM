@@ -55,6 +55,8 @@ class BaseModel(LightningModule):
         # params for latent space
         self._latent_sample_strategy = self._params["latent_sample_strategy"]
         self._latent_repr_dim = self._params["latent_repr_size"]
+        self._kl_divergence_weight = self._params["kl_divergence_weight"]
+        self._kl_divergence_annealing_beta = self._params['kl_divergence_annealing_beta']
 
     def _init_params(self, params, dataset):
         """
@@ -312,7 +314,12 @@ class BaseModel(LightningModule):
             ),
             dim=0,
         )
-        # kl *= self.kl_coeff
+        # kld weight will start from 0 and increase to the original amount.
+        kld_weight = (1.0 - self._kl_divergence_annealing_beta ** (
+            self.trainer.global_step
+        )) * self._kl_divergence_weight
+
+        kld_loss *= kld_weight
 
         loss = kld_loss + decoder_loss
 

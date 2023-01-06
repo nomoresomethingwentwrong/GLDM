@@ -10,7 +10,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 
 if __name__ == "__main__":
-    
+
     batch_size = 1
     train_split1 = "train_0"
     train_split2 = "train_1000"
@@ -48,8 +48,6 @@ if __name__ == "__main__":
         split=valid_split,
     )
 
-
-
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -85,7 +83,12 @@ if __name__ == "__main__":
     )
 
     params = get_params(dataset=train_dataset1)  # train_dataset)
-    model = BaseModel(params, valid_dataset, num_train_batches = len(train_dataloader), batch_size = batch_size)  # train_dataset)
+    model = BaseModel(
+        params,
+        valid_dataset,
+        num_train_batches=len(train_dataloader),
+        batch_size=batch_size,
+    )  # train_dataset)
 
     # Get current time for folder path.
     now = str(datetime.now()).replace(" ", "_").replace(":", "_")
@@ -108,6 +111,7 @@ if __name__ == "__main__":
         devices=[3],
         callbacks=[checkpoint_callback, lr_monitor, early_stopping],
         logger=tensorboard_logger,
+        gradient_clip_val=0.5,
     )  # overfit_batches=1)
     trainer.fit(
         model, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader

@@ -234,8 +234,10 @@ def get_params(dataset):
         "latent_sample_strategy": "per_graph",
         "latent_repr_dim": 512,
         "latent_repr_size": 512,
+        "kl_divergence_weight":0.02,
+        "kl_divergence_annealing_beta":0.999,
         "training_hyperparams": {
-            "max_lr": 1e-2,
+            "max_lr": 1e-3,
             "div_factor": 25,
             "three_phase": True,
         },
