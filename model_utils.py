@@ -237,7 +237,7 @@ def get_params(dataset):
         "kl_divergence_weight":0.02,
         "kl_divergence_annealing_beta":0.999,
         "training_hyperparams": {
-            "max_lr": 1e-3,
+            "max_lr": 1e-2,
             "div_factor": 25,
             "three_phase": True,
         },
