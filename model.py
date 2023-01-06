@@ -1,10 +1,9 @@
 import sys
 import itertools
 from pytorch_lightning import LightningModule
-from model_utils import GenericGraphEncoder, GenericMLP, MoLeROutput
+from model_utils import GenericMLP, MoLeROutput
 from encoder import GraphEncoder, PartialGraphEncoder
 
-from rdkit import Chem
 from decoder import MLPDecoder
 import torch
 import numpy as np
@@ -30,7 +29,7 @@ from molecule_generation.utils.moler_decoding_utils import (
 
 
 class BaseModel(LightningModule):
-    def __init__(self, params, dataset, num_train_batches):
+    def __init__(self, params, dataset, num_train_batches, batch_size=1):
         """Params is a nested dictionary with the relevant parameters."""
         super(BaseModel, self).__init__()
         self._init_params(params, dataset)
@@ -40,6 +39,7 @@ class BaseModel(LightningModule):
             self._training_hyperparams = None
         self._params = params
         self._num_train_batches = num_train_batches
+        self._batch_size = batch_size
         # Graph encoders
         self._full_graph_encoder = GraphEncoder(**self._params["full_graph_encoder"])
         self._partial_graph_encoder = PartialGraphEncoder(
@@ -321,36 +321,27 @@ class BaseModel(LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
-        self.log(
-            "train_loss",
-            logs,
-            batch_size=1000
-            # {f"train_{k}": v for k, v in logs.items()},
-            # # prog_bar=True,
-            # on_step=True,
-            # on_epoch=False,
-            # batch_size=16,
-        )
+        for metric in logs:
+            self.log(f"train_{metric}", logs[metric], batch_size=self._batch_size)
+
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
-        self.log(
-            "val_loss",
-            logs,
-            batch_size=1000
-            # {f"val_{k}": v for k, v in logs.items()},
-            # prog_bar=True,
-            # on_step=True,
-            # on_epoch=False,
-            # batch_size=16,
-        )
+        for metric in logs:
+            self.log(f"val_{metric}", logs[metric], batch_size=self._batch_size)
+
         return loss
 
     def configure_optimizers(self):
-        print(self.parameters())
-        optimizer = torch.optim.Adam(
-            self.parameters(), lr=self._training_hyperparams["max_lr"]
+        # optimizer = torch.optim.Adam(
+        #     self.parameters(), lr=self._training_hyperparams["max_lr"]
+        # )
+
+        optimizer = torch.optim.AdamW(
+            self.parameters(),
+            lr=self._training_hyperparams["max_lr"],
+            betas=(0.9, 0.999),
         )
         lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer=optimizer,
