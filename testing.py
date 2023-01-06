@@ -3,34 +3,38 @@ from torch_geometric.loader import DataLoader
 from model import BaseModel
 from model_utils import get_params
 from pytorch_lightning import Trainer
-from torch.utils.data import ConcatDataset 
+from torch.utils.data import ConcatDataset
+from datetime import datetime
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.callbacks import LearningRateMonitor
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
-    train_split1 = 'train_0'
-    train_split2 = 'train_1000'
-    train_split3 = 'train_2000'
+    train_split1 = "train_0"
+    train_split2 = "train_1000"
+    train_split3 = "train_2000"
 
-    valid_split = 'valid_0'
+    valid_split = "valid_0"
 
-    raw_moler_trace_dataset_parent_folder = '/data/ongh0068/guacamol/trace_dir'
+    raw_moler_trace_dataset_parent_folder = "/data/ongh0068/guacamol/trace_dir"
     output_pyg_trace_dataset_parent_folder = "/data/ongh0068/l1000/already_batched"
 
     train_dataset1 = MolerDataset(
         root="/data/ongh0068",
-        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,#"/data/ongh0068/l1000/trace_playground",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split1,
     )
     train_dataset2 = MolerDataset(
         root="/data/ongh0068",
-        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,#"/data/ongh0068/l1000/trace_playground",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split2,
     )
     train_dataset3 = MolerDataset(
         root="/data/ongh0068",
-        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,#"/data/ongh0068/l1000/trace_playground",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split3,
     )
@@ -38,12 +42,10 @@ if __name__ == '__main__':
 
     valid_dataset = MolerDataset(
         root="/data/ongh0068",
-        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,#"/data/ongh0068/l1000/trace_playground",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=valid_split,
     )
-
-
 
     train_dataloader = DataLoader(
         train_dataset,
@@ -58,7 +60,7 @@ if __name__ == '__main__':
             "correct_attachment_point_choice",
             "correct_node_type_choices",
             "original_graph_x",
-            'correct_first_node_type_choices'
+            "correct_first_node_type_choices",
         ],
     )
 
@@ -75,21 +77,38 @@ if __name__ == '__main__':
             "correct_attachment_point_choice",
             "correct_node_type_choices",
             "original_graph_x",
-            'correct_first_node_type_choices'
+            "correct_first_node_type_choices",
         ],
     )
 
+    params = get_params(dataset=train_dataset1)  # train_dataset)
+    model = BaseModel(params, valid_dataset, num_train_batches = len(train_dataloader))  # train_dataset)
 
+    # Get current time for folder path.
+    now = str(datetime.now()).replace(" ", "_").replace(":", "_")
 
+    # Callbacks
+    lr_monitor = LearningRateMonitor(logging_interval="step")
+    tensorboard_logger = TensorBoardLogger(save_dir=f"../{now}", name=f"logs_{now}")
+    early_stopping = EarlyStopping(monitor="val_loss", patience=10)
+    checkpoint_callback = ModelCheckpoint(
+        save_top_k=1,
+        monitor="val_loss",
+        dirpath=f"../{now}",
+        mode="min",
+        filename="{epoch:02d}-{val_f1:.2f}",
+    )
 
-    params = get_params(dataset=train_dataset1)#train_dataset)
-    model = BaseModel(params, valid_dataset)#train_dataset)
-
-
-    trainer = Trainer(accelerator = 'gpu', max_epochs = 100, devices = [2])  # overfit_batches=1)
-    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
-
-
+    trainer = Trainer(
+        accelerator="gpu",
+        max_epochs=1,
+        devices=[3],
+        callbacks=[checkpoint_callback, lr_monitor, early_stopping],
+        logger=tensorboard_logger,
+    )  # overfit_batches=1)
+    trainer.fit(
+        model, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader
+    )
 
     # train_processed_file_metadata = (
     #     f"/data/ongh0068/l1000/pyg_output_playground/{train_split}/processed_file_paths.csv"
