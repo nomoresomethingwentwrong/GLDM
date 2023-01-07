@@ -45,7 +45,7 @@ def traced_unsorted_segment_log_softmax(
     exped_recentered_scores = torch.exp(recentered_scores)
 
     per_segment_sums = scatter(exped_recentered_scores, segment_ids, reduce="sum")
-    per_segment_normalization_consts = torch.log(per_segment_sums)
+    per_segment_normalization_consts = torch.log(per_segment_sums + SMALL_NUMBER)
 
     log_probs = recentered_scores - per_segment_normalization_consts[segment_ids]
     return log_probs

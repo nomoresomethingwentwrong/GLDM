@@ -107,11 +107,13 @@ if __name__ == "__main__":
 
     trainer = Trainer(
         accelerator="gpu",
-        max_epochs=30,
-        devices=[3],
+        max_epochs=1,
+        devices=[1],
         callbacks=[checkpoint_callback, lr_monitor, early_stopping],
         logger=tensorboard_logger,
         gradient_clip_val=1.0,
+        detect_anomaly=True,
+        track_grad_norm=2,
     )  # overfit_batches=1)
     trainer.fit(
         model, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader
