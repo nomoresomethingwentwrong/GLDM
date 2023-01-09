@@ -1,6 +1,14 @@
 import torch
 from torch.nn import Linear, LeakyReLU, Dropout
-from torch_geometric.nn import RGATConv, GCNConv, LayerNorm, Sequential
+from torch_geometric.nn import (
+    FiLMConv,
+    RGATConv,
+    GATConv,
+    GCNConv,
+    RGCNConv,
+    LayerNorm,
+    Sequential,
+)
 from torch_geometric.nn import aggr
 from dataclasses import dataclass
 import sys
@@ -18,12 +26,14 @@ class MoLeROutput:
     edge_candidate_logits: torch.Tensor
     edge_type_logits: torch.Tensor
     attachment_point_selection_logits: torch.Tensor
-    mu: torch.Tensor
-    log_var: torch.Tensor
-
+    p: torch.Tensor
+    q: torch.Tensor
 
 class LayerType(Enum):
+    FiLMConv = auto()  # original MoLeR paper GNN layer
     GCNConv = auto()
+    RGCNConv = auto()
+    GATConv = auto()
     RGATConv = auto()
 
 
@@ -40,85 +50,27 @@ class GenericGraphEncoder(torch.nn.Module):
         num_relations=3,
         hidden_layer_feature_dim=64,
         num_layers=12,
-        layer_type=LayerType.GCNConv,  # "RGATConv",
+        layer_type=LayerType.FiLMConv,  # "RGATConv",
         use_intermediate_gnn_results=True,
     ):
         super(GenericGraphEncoder, self).__init__()
         self._layer_type = layer_type
 
-        if self._layer_type == LayerType.RGATConv:
-            self._first_layer = RGATConv(
-                in_channels=input_feature_dim,
-                out_channels=hidden_layer_feature_dim,
-                num_relations=num_relations,
-            )
+        self._first_layer, self._encoder_layers = get_encoder_layers(
+            layer_type=layer_type,
+            num_layers=num_layers,
+            input_feature_dim=input_feature_dim,
+            hidden_layer_feature_dim=hidden_layer_feature_dim,
+            num_relations=num_relations,
+        )
 
-            self._encoder_layers = torch.nn.ModuleList(
-                [
-                    Sequential(
-                        "x, edge_index, edge_type",
-                        [
-                            LayerNorm(
-                                in_channels=hidden_layer_feature_dim
-                            ),  # layer norm before activation as stated here https://www.reddit.com/r/learnmachinelearning/comments/5px958/should_layernorm_be_used_before_or_after_the/
-                            LeakyReLU(),
-                            (
-                                RGATConv(
-                                    in_channels=hidden_layer_feature_dim,
-                                    out_channels=hidden_layer_feature_dim,
-                                    num_relations=num_relations,  # additional parameter for RGATConv
-                                ),
-                                "x, edge_index, edge_type -> x",
-                            ),
-                        ],
-                    )
-                    for _ in range(num_layers)
-                ]
-            )
-
-            self._softmax_aggr = aggr.SoftmaxAggregation(learn=True)
-            self._use_intermediate_gnn_results = use_intermediate_gnn_results
-
-        elif self._layer_type == LayerType.GCNConv:
-            self._first_layer = GCNConv(
-                in_channels=input_feature_dim,
-                out_channels=hidden_layer_feature_dim,
-            )
-
-            self._encoder_layers = torch.nn.ModuleList(
-                [
-                    Sequential(
-                        "x, edge_index",
-                        [
-                            (
-                                LayerNorm(in_channels=hidden_layer_feature_dim),
-                                "x -> x",
-                            ),  # layer norm before activation as stated here https://www.reddit.com/r/learnmachinelearning/comments/5px958/should_layernorm_be_used_before_or_after_the/
-                            LeakyReLU(),
-                            (
-                                GCNConv(
-                                    in_channels=hidden_layer_feature_dim,
-                                    out_channels=hidden_layer_feature_dim,
-                                ),
-                                "x, edge_index -> x",
-                            ),
-                        ],
-                    )
-                    for _ in range(num_layers)
-                ]
-            )
-
-            self._softmax_aggr = aggr.SoftmaxAggregation(learn=True)
-            self._use_intermediate_gnn_results = use_intermediate_gnn_results
-
-        else:
-            raise NotImplementedError
+        self._softmax_aggr = aggr.SoftmaxAggregation(learn=True)
+        self._use_intermediate_gnn_results = use_intermediate_gnn_results
 
     def forward(self, node_features, edge_index, edge_type_or_attr, batch_index):
         gnn_results = []
-
-        if self._layer_type == LayerType.RGATConv:
-
+        if any(layer_type in str(self._layer_type) for layer_type in ['FiLMConv', 'RGATConv', 'RGCNConv', 'GATConv']):
+            
             gnn_results += [
                 self._first_layer(node_features, edge_index.long(), edge_type_or_attr)
             ]
@@ -127,7 +79,6 @@ class GenericGraphEncoder(torch.nn.Module):
                 gnn_results += [
                     layer(gnn_results[-1], edge_index.long(), edge_type_or_attr)
                 ]
-
         elif "GCNConv" in str(
             self._layer_type
         ):  # self._layer_type == LayerType.GCNConv: # GCNConv does not require edge features or edge attrs
@@ -136,6 +87,8 @@ class GenericGraphEncoder(torch.nn.Module):
 
             for layer in self._encoder_layers:
                 gnn_results += [layer(gnn_results[-1], edge_index.long())]
+        else:
+            raise NotImplementedError
 
         if self._use_intermediate_gnn_results:
             x = torch.cat(gnn_results, axis=-1)
@@ -143,7 +96,9 @@ class GenericGraphEncoder(torch.nn.Module):
 
         else:
             graph_representations = self._softmax_aggr(gnn_results[-1], batch_index)
+
         node_representations = torch.cat(gnn_results, axis=-1)
+
         return graph_representations, node_representations
 
 
@@ -156,10 +111,10 @@ class GenericMLP(torch.nn.Module):
         self,
         input_feature_dim,
         output_size,
-        hidden_layer_feature_dim=64,
+        hidden_layer_feature_dim=256,
         num_hidden_layers=1,
         activation_layer_type="leaky_relu",
-        dropout_prob=0.2,
+        dropout_prob=0.1,
     ):
         super(GenericMLP, self).__init__()
         if activation_layer_type == "leaky_relu":
@@ -205,6 +160,210 @@ def get_class_weights(dataset, class_weight_factor=1.0):
     return class_weights
 
 
+def get_encoder_layers(
+    layer_type,
+    num_layers,
+    input_feature_dim,
+    hidden_layer_feature_dim,
+    num_relations=None,
+    act = LeakyReLU(),
+):
+    """Get first layer and encoder layers"""
+    if layer_type == LayerType.FiLMConv:
+        first_layer = FiLMConv(
+            in_channels=input_feature_dim,
+            out_channels=hidden_layer_feature_dim,
+            num_relations=num_relations,
+            act = act
+        )
+        encoder_layers = _get_encoder_layers(
+            layer_type=LayerType.FiLMConv,
+            num_layers=num_layers,
+            hidden_layer_feature_dim=hidden_layer_feature_dim,
+            num_relations=num_relations,
+            act = act
+
+        )
+    elif layer_type == LayerType.RGATConv:
+        first_layer = RGATConv(
+            in_channels=input_feature_dim,
+            out_channels=hidden_layer_feature_dim,
+            num_relations=num_relations,
+        )
+        encoder_layers = _get_encoder_layers(
+            layer_type=LayerType.RGATConv,
+            num_layers=num_layers,
+            hidden_layer_feature_dim=hidden_layer_feature_dim,
+            num_relations=num_relations,
+        )
+
+    elif layer_type == LayerType.RGCNConv:
+        first_layer = RGCNConv(
+            in_channels=input_feature_dim,
+            out_channels=hidden_layer_feature_dim,
+            num_relations=num_relations,
+        )
+        encoder_layers = _get_encoder_layers(
+            layer_type=LayerType.RGCNConv,
+            num_layers=num_layers,
+            hidden_layer_feature_dim=hidden_layer_feature_dim,
+            num_relations=num_relations,
+        )
+
+    elif layer_type == LayerType.GATConv:
+        first_layer = GATConv(
+            in_channels=input_feature_dim,
+            out_channels=hidden_layer_feature_dim,
+        )
+        encoder_layers = _get_encoder_layers(
+            layer_type=LayerType.GATConv,
+            num_layers=num_layers,
+            hidden_layer_feature_dim=hidden_layer_feature_dim,
+        )
+
+    elif layer_type == LayerType.GCNConv:
+        first_layer = GCNConv(
+            in_channels=input_feature_dim,
+            out_channels=hidden_layer_feature_dim,
+        )
+        encoder_layers = _get_encoder_layers(
+            layer_type=LayerType.GCNConv,
+            num_layers=num_layers,
+            hidden_layer_feature_dim=hidden_layer_feature_dim,
+        )
+    else:
+        raise NotImplementedError
+
+    return first_layer, encoder_layers
+
+
+def _get_encoder_layers(
+    layer_type, num_layers, hidden_layer_feature_dim, num_relations=None, act = LeakyReLU()
+):
+    """Instantiates all layers other than the first"""
+    if layer_type == LayerType.FiLMConv:
+        assert num_relations is not None
+        return torch.nn.ModuleList(
+            [
+                Sequential(
+                    "x, edge_index, edge_type",
+                    [
+                        (LayerNorm(
+                            in_channels=hidden_layer_feature_dim
+                        ), "x -> x"),  # layer norm before activation as stated here https://www.reddit.com/r/learnmachinelearning/comments/5px958/should_layernorm_be_used_before_or_after_the/
+                        # LeakyReLU(), # remove this because FiLMConv has activation already applied and the example in https://github.com/pyg-team/pytorch_geometric/blob/master/examples/film.py doesnt use it
+                        (
+                            FiLMConv(
+                                in_channels=hidden_layer_feature_dim,
+                                out_channels=hidden_layer_feature_dim,
+                                num_relations=num_relations,  # additional parameter for RGATConv
+                                act=act,
+                            ),
+                            "x, edge_index, edge_type -> x",
+                        ),
+                    ],
+                )
+                for _ in range(num_layers)
+            ]
+        )
+    elif layer_type == LayerType.GCNConv:
+        return torch.nn.ModuleList(
+            [
+                Sequential(
+                    "x, edge_index",
+                    [
+                        (
+                            LayerNorm(in_channels=hidden_layer_feature_dim),
+                            "x -> x",
+                        ),  # layer norm before activation as stated here https://www.reddit.com/r/learnmachinelearning/comments/5px958/should_layernorm_be_used_before_or_after_the/
+                        LeakyReLU(),
+                        (
+                            GCNConv(
+                                in_channels=hidden_layer_feature_dim,
+                                out_channels=hidden_layer_feature_dim,
+                            ),
+                            "x, edge_index -> x",
+                        ),
+                    ],
+                )
+                for _ in range(num_layers)
+            ]
+        )
+    elif layer_type == LayerType.RGATConv:
+        assert num_relations is not None
+        return torch.nn.ModuleList(
+            [
+                Sequential(
+                    "x, edge_index, edge_type",
+                    [
+                        (
+                            LayerNorm(in_channels=hidden_layer_feature_dim),
+                            "x -> x",
+                        ),  # layer norm before activation as stated here https://www.reddit.com/r/learnmachinelearning/comments/5px958/should_layernorm_be_used_before_or_after_the/
+                        LeakyReLU(),
+                        (
+                            RGATConv(
+                                in_channels=hidden_layer_feature_dim,
+                                out_channels=hidden_layer_feature_dim,
+                                num_relations=num_relations,  # additional parameter for RGATConv
+                            ),
+                            "x, edge_index, edge_type -> x",
+                        ),
+                    ],
+                )
+                for _ in range(num_layers)
+            ]
+        )
+    elif layer_type == LayerType.RGCNConv:
+        assert num_relations is not None
+        return torch.nn.ModuleList(
+            [
+                Sequential(
+                    "x, edge_index, edge_type",
+                    [
+                        (
+                            LayerNorm(in_channels=hidden_layer_feature_dim),
+                            "x -> x",
+                        ),  # layer norm before activation as stated here https://www.reddit.com/r/learnmachinelearning/comments/5px958/should_layernorm_be_used_before_or_after_the/
+                        LeakyReLU(),
+                        (
+                            RGCNConv(
+                                in_channels=hidden_layer_feature_dim,
+                                out_channels=hidden_layer_feature_dim,
+                                num_relations=num_relations,  # additional parameter for RGATConv
+                            ),
+                            "x, edge_index, edge_type -> x",
+                        ),
+                    ],
+                )
+                for _ in range(num_layers)
+            ]
+        )
+    elif layer_type == LayerType.GATConv:
+        return torch.nn.ModuleList(
+            [
+                Sequential(
+                    "x, edge_index, edge_attr",
+                    [
+                        (
+                            LayerNorm(in_channels=hidden_layer_feature_dim),
+                            "x -> x",
+                        ), # layer norm before activation as stated here https://www.reddit.com/r/learnmachinelearning/comments/5px958/should_layernorm_be_used_before_or_after_the/
+                        LeakyReLU(),
+                        (
+                            GATConv(
+                                in_channels=hidden_layer_feature_dim,
+                                out_channels=hidden_layer_feature_dim,
+                            ),
+                            "x, edge_index, edge_attr -> x",
+                        ),
+                    ],
+                )
+                for _ in range(num_layers)
+            ]
+        )
+
+
 def get_params(dataset):
     return {
         "full_graph_encoder": {
@@ -221,7 +380,7 @@ def get_params(dataset):
                 "input_feature_dim": 1344,
                 "output_size": len(dataset.node_type_index_to_string) + 1,
             },
-            "node_type_loss_weights": torch.tensor(get_class_weights(dataset)).cuda(),
+            "node_type_loss_weights": torch.tensor(get_class_weights(dataset)),
             "no_more_edges_repr": (1, 835),
             "edge_candidate_scorer": {"input_feature_dim": 3011, "output_size": 1},
             "edge_type_selector": {"input_feature_dim": 3011, "output_size": 3},
@@ -234,10 +393,10 @@ def get_params(dataset):
         "latent_sample_strategy": "per_graph",
         "latent_repr_dim": 512,
         "latent_repr_size": 512,
-        "kl_divergence_weight":0.02,
-        "kl_divergence_annealing_beta":0.999,
+        "kl_divergence_weight": 0.02,
+        "kl_divergence_annealing_beta": 0.999,
         "training_hyperparams": {
-            "max_lr": 1e-2,
+            "max_lr": 1e-3,
             "div_factor": 25,
             "three_phase": True,
         },

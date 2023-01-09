@@ -56,7 +56,9 @@ class BaseModel(LightningModule):
         self._latent_sample_strategy = self._params["latent_sample_strategy"]
         self._latent_repr_dim = self._params["latent_repr_size"]
         self._kl_divergence_weight = self._params["kl_divergence_weight"]
-        self._kl_divergence_annealing_beta = self._params['kl_divergence_annealing_beta']
+        self._kl_divergence_annealing_beta = self._params[
+            "kl_divergence_annealing_beta"
+        ]
 
     def _init_params(self, params, dataset):
         """
@@ -173,21 +175,28 @@ class BaseModel(LightningModule):
 
     def sample_from_latent_repr(self, latent_repr):
         mean_and_log_var = self.mean_log_var_mlp(latent_repr)
+        mean_and_log_var = torch.clamp(mean_and_log_var, min=-10, max=10)
         # perturb latent repr
         mu = mean_and_log_var[:, : self.latent_dim]  # Shape: [V, MD]
         log_var = mean_and_log_var[:, self.latent_dim :]  # Shape: [V, MD]
 
         # result_representations: shape [num_partial_graphs, latent_repr_dim]
-        z = self.reparametrize(mu, log_var)
+        # z = self.reparametrize(mu, log_var)
+        p, q, z = self.reparametrize(mu, log_var)
 
-        return mu, log_var, z
+        # return mu, log_var, z
+        return p, q, z
 
     def reparametrize(self, mu, log_var):
         """Samples a different noise vector for each partial graph.
         TODO: look into the other sampling strategies."""
         std = torch.exp(0.5 * log_var)
-        eps = torch.randn_like(std)
-        return eps * std + mu
+        # eps = torch.randn_like(std)
+        # return eps * std + mu
+        p = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(std))
+        q = torch.distributions.Normal(mu, std)
+        z = q.rsample()
+        return p, q, z
 
     def forward(self, batch):
         moler_output = self._run_step(batch)
@@ -221,7 +230,10 @@ class BaseModel(LightningModule):
         )
 
         # Apply latent sampling strategy
-        mu, log_var, latent_representation = self.sample_from_latent_repr(
+        # mu, log_var, latent_representation = self.sample_from_latent_repr(
+        #     input_molecule_representations
+        # )
+        p, q, latent_representation = self.sample_from_latent_repr(
             input_molecule_representations
         )
 
@@ -254,8 +266,10 @@ class BaseModel(LightningModule):
             edge_candidate_logits=edge_candidate_logits,
             edge_type_logits=edge_type_logits,
             attachment_point_selection_logits=attachment_point_selection_logits,
-            mu=mu,
-            log_var=log_var,
+            # mu=mu,
+            # log_var=log_var,
+            p=p,
+            q=q,
         )
 
     def compute_loss(self, moler_output, batch):
@@ -302,22 +316,26 @@ class BaseModel(LightningModule):
         moler_output = self._run_step(batch)
 
         decoder_loss = self.compute_loss(moler_output=moler_output, batch=batch)
-
-        kld_loss = torch.mean(
-            -0.5
-            * torch.sum(
-                1
-                + moler_output.log_var
-                - moler_output.mu**2
-                - moler_output.log_var.exp(),
-                dim=1,
-            ),
-            dim=0,
-        )
+        # print("log_var", torch.max(moler_output.log_var))
+        # kld_loss = torch.mean(
+        #     -0.5
+        #     * torch.sum(
+        #         1
+        #         + moler_output.log_var
+        #         - moler_output.mu**2
+        #         - torch.exp(moler_output.log_var),
+        #         dim=1,
+        #     ),
+        #     dim=0,
+        # )
+        kld_loss = torch.distributions.kl_divergence(
+            moler_output.q, moler_output.p
+        ).mean()
+        # print("kld_loss", kld_loss)
         # kld weight will start from 0 and increase to the original amount.
-        kld_weight = (1.0 - self._kl_divergence_annealing_beta ** (
-            self.trainer.global_step
-        )) * self._kl_divergence_weight
+        kld_weight = (
+            1.0 - self._kl_divergence_annealing_beta ** (self.trainer.global_step)
+        ) * self._kl_divergence_weight
 
         kld_loss *= kld_weight
 

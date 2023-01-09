@@ -46,7 +46,11 @@ class MLPDecoder(torch.nn.Module):
         self._no_more_edges_representation = torch.nn.Parameter(
             torch.empty(*params["no_more_edges_repr"]), requires_grad=True
         )
-        torch.nn.init.kaiming_normal_(self._no_more_edges_representation, mode='fan_out', nonlinearity='leaky_relu')
+        torch.nn.init.kaiming_normal_(
+            self._no_more_edges_representation,
+            mode="fan_out",
+            nonlinearity="leaky_relu",
+        )
         self._edge_candidate_scorer = GenericMLP(**params["edge_candidate_scorer"])
         self._edge_type_selector = GenericMLP(**params["edge_type_selector"])
         self._cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction="none")
@@ -64,6 +68,7 @@ class MLPDecoder(torch.nn.Module):
         graph_representations,
         graphs_requiring_node_choices,
     ):
+
         relevant_graph_representations = input_molecule_representations[
             graphs_requiring_node_choices
         ]
