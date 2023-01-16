@@ -15,6 +15,10 @@ if __name__ == "__main__":
     train_split1 = "train_0"
     train_split2 = "train_1000"
     train_split3 = "train_2000"
+    train_split4 = "train_3000"
+    train_split5 = "train_4000"
+    train_split6 = "train_5000"
+    train_split7 = "train_6000"
 
     valid_split = "valid_0"
 
@@ -39,7 +43,43 @@ if __name__ == "__main__":
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split3,
     )
-    train_dataset = ConcatDataset([train_dataset1, train_dataset2, train_dataset3])
+
+    train_dataset4 = MolerDataset(
+        root="/data/ongh0068",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
+        output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
+        split=train_split4,
+    )
+
+    train_dataset5 = MolerDataset(
+        root="/data/ongh0068",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
+        output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
+        split=train_split5,
+    )
+    train_dataset6 = MolerDataset(
+        root="/data/ongh0068",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
+        output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
+        split=train_split6,
+    )
+    train_dataset7 = MolerDataset(
+        root="/data/ongh0068",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
+        output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
+        split=train_split7,
+    )
+    train_dataset = ConcatDataset(
+        [
+            train_dataset1,
+            train_dataset2,
+            train_dataset3,
+            train_dataset4,
+            train_dataset5,
+            train_dataset6,
+            train_dataset7,
+        ]
+    )
 
     valid_dataset = MolerDataset(
         root="/data/ongh0068",
@@ -107,7 +147,7 @@ if __name__ == "__main__":
 
     trainer = Trainer(
         accelerator="gpu",
-        max_epochs=50,
+        max_epochs=10,
         devices=[1],
         callbacks=[checkpoint_callback, lr_monitor, early_stopping],
         logger=tensorboard_logger,
