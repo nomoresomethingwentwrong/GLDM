@@ -33,6 +33,7 @@ class BaseModel(LightningModule):
         """Params is a nested dictionary with the relevant parameters."""
         super(BaseModel, self).__init__()
         self._init_params(params, dataset)
+        self.save_hyperparameters()
         if "training_hyperparams" in params:
             self._training_hyperparams = params["training_hyperparams"]
         else:

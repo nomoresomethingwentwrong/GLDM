@@ -13,7 +13,7 @@ class GraphEncoder(torch.nn.Module):
         motif_embedding_size=64,
         hidden_layer_feature_dim=64,
         num_layers=12,
-        layer_type=LayerType.FiLMConv,  # "RGATConv",
+        layer_type="FiLMConv",  # "RGATConv",
         use_intermediate_gnn_results=True,
         aggr_layer_type="MoLeRAggregation",
         total_num_moler_aggr_heads=None,  # half will have sigmoid scoring function, half will have softmax scoring functions
@@ -49,23 +49,17 @@ class GraphEncoder(torch.nn.Module):
         motif_embeddings = self._embed(original_graph_node_categorical_features)
         node_features = torch.cat((node_features, motif_embeddings), axis=-1)
         ############ GNN layers that take in `edge_type`###############
-        if any(
-            layer_type == self.gnn_layer_type
-            for layer_type in [
+        if LayerType[self.gnn_layer_type] in [
                 LayerType.FiLMConv,
                 LayerType.RGATConv,
                 LayerType.RGCNConv,
-            ]
-        ):
+            ]:
             edge_type = edge_features.int()
             input_molecule_representations, _ = self._model(
                 node_features, edge_index.long(), edge_type, batch_index
             )
         ############ GNN layers that take in `edge_attr`###############
-        elif any(
-            layer_type == self.gnn_layer_type
-            for layer_type in [LayerType.GATConv, LayerType.GCNConv]
-        ):
+        elif LayerType[self.gnn_layer_type] in [LayerType.GATConv, LayerType.GCNConv]:
             edge_attr = edge_features.float()
             input_molecule_representations, _ = self._model(
                 node_features, edge_index.long(), edge_attr, batch_index
@@ -150,23 +144,17 @@ class PartialGraphEncoder(torch.nn.Module):
         )
 
         ############ GNN layers that take in `edge_type`###############
-        if any(
-            layer_type == self.gnn_layer_type
-            for layer_type in [
+        if LayerType[self.gnn_layer_type] in [
                 LayerType.FiLMConv,
                 LayerType.RGATConv,
                 LayerType.RGCNConv,
-            ]
-        ):
+            ]:
             edge_type = edge_features.int()
             partial_graph_representions, node_representations = self._model(
                 initial_node_features, edge_index.long(), edge_type, batch_index
             )
         ############ GNN layers that take in `edge_attr`###############
-        elif any(
-            layer_type == self.gnn_layer_type
-            for layer_type in [LayerType.GATConv, LayerType.GCNConv]
-        ):
+        elif LayerType[self.gnn_layer_type] in [LayerType.GATConv, LayerType.GCNConv]:
             edge_attr = edge_features.float()
             partial_graph_representions, node_representations = self._model(
                 initial_node_features, edge_index.long(), edge_attr, batch_index

@@ -11,7 +11,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 
 if __name__ == "__main__":
 
-    batch_size = 1
+    batch_size = 8
     train_split1 = "train_0"
     train_split2 = "train_1000"
     train_split3 = "train_2000"
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     # Callbacks
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tensorboard_logger = TensorBoardLogger(save_dir=f"../{now}", name=f"logs_{now}")
-    early_stopping = EarlyStopping(monitor="val_loss", patience=10)
+    early_stopping = EarlyStopping(monitor="val_loss", patience=3)
     checkpoint_callback = ModelCheckpoint(
         save_top_k=1,
         monitor="val_loss",
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     trainer = Trainer(
         accelerator="gpu",
         max_epochs=10,
-        devices=[1],
+        devices=[2],
         callbacks=[checkpoint_callback, lr_monitor, early_stopping],
         logger=tensorboard_logger,
         gradient_clip_val=0.5,
