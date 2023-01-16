@@ -25,20 +25,31 @@ class MLPDecoder(torch.nn.Module):
         params,  # nested dictionary of parameters for each MLP
     ):
         super(MLPDecoder, self).__init__()
-        self.dummy_param = torch.nn.Parameter(torch.empty(0)) # for inferrring device of model
+        self._dummy_param = torch.nn.Parameter(
+            torch.empty(0)
+        )  # for inferrring device of model
 
         # TODO include each loss weight for weighted loss computation in the loss
 
         # First Node Selection
-        self._first_node_type_selector =  GenericMLP(**params['first_node_type_selector'])
-        
+        self._first_node_type_selector = GenericMLP(
+            **params["first_node_type_selector"]
+        )
+
         # Node selection
         self._node_type_selector = GenericMLP(**params["node_type_selector"])
-        self._node_type_loss_weights = params["node_type_loss_weights"] # cannot move to gpu yet because trainer has not been instantiated
+        self._node_type_loss_weights = params[
+            "node_type_loss_weights"
+        ]  # cannot move to gpu yet because trainer has not been instantiated
 
         # Edge selection
         self._no_more_edges_representation = torch.nn.Parameter(
-            torch.rand(*params["no_more_edges_repr"]), requires_grad=True
+            torch.empty(*params["no_more_edges_repr"]), requires_grad=True
+        )
+        torch.nn.init.kaiming_normal_(
+            self._no_more_edges_representation,
+            mode="fan_out",
+            nonlinearity="leaky_relu",
         )
         self._edge_candidate_scorer = GenericMLP(**params["edge_candidate_scorer"])
         self._edge_type_selector = GenericMLP(**params["edge_type_selector"])
@@ -57,6 +68,7 @@ class MLPDecoder(torch.nn.Module):
         graph_representations,
         graphs_requiring_node_choices,
     ):
+
         relevant_graph_representations = input_molecule_representations[
             graphs_requiring_node_choices
         ]
@@ -106,9 +118,11 @@ class MLPDecoder(torch.nn.Module):
 
         if self._node_type_loss_weights is not None:
             per_correct_node_decision_normalised_neglogprob *= (
-                self._node_type_loss_weights[:-1].to(self.dummy_param.device)
+                self._node_type_loss_weights[:-1].to(self._dummy_param.device)
             )
-            per_correct_no_node_decision_neglogprob *= self._node_type_loss_weights[-1].to(self.dummy_param.device)
+            per_correct_no_node_decision_neglogprob *= self._node_type_loss_weights[
+                -1
+            ].to(self._dummy_param.device)
 
         # Loss is the sum of the masked (no) node decisions, averaged over number of decisions made:
         total_node_type_loss = torch.sum(
@@ -120,10 +134,7 @@ class MLPDecoder(torch.nn.Module):
 
         return node_type_loss
 
-    def pick_first_node_type(
-        self, 
-        latent_representations
-    ):
+    def pick_first_node_type(self, latent_representations):
         return self._first_node_type_selector(latent_representations)
 
     def compute_first_node_type_selection_loss(
@@ -131,16 +142,22 @@ class MLPDecoder(torch.nn.Module):
         first_node_type_logits,
         first_node_type_multihot_labels,
     ):
-        per_graph_logprobs = torch.nn.functional.log_softmax(first_node_type_logits, dim = -1)
-        per_graph_num_correct_choices = torch.sum(first_node_type_multihot_labels, axis = -1, keepdims = True)
+        per_graph_logprobs = torch.nn.functional.log_softmax(
+            first_node_type_logits, dim=-1
+        )
+        per_graph_num_correct_choices = torch.sum(
+            first_node_type_multihot_labels, axis=-1, keepdims=True
+        )
         per_graph_normalised_neglogprob = compute_neglogprob_for_multihot_objective(
             logprobs=per_graph_logprobs,
             multihot_labels=first_node_type_multihot_labels,
             per_decision_num_correct_choices=per_graph_num_correct_choices,
-        ) 
+        )
         if self._node_type_loss_weights is not None:
-            per_graph_normalised_neglogprob *= self._node_type_loss_weights[:-1].to(self.dummy_param.device)
-            
+            per_graph_normalised_neglogprob *= self._node_type_loss_weights[:-1].to(
+                self._dummy_param.device
+            )
+
         first_node_type_loss = safe_divide_loss(
             torch.sum(per_graph_normalised_neglogprob),
             first_node_type_multihot_labels.shape[0],
@@ -186,7 +203,14 @@ class MLPDecoder(torch.nn.Module):
 
         # The zeroth element of edge_features is the graph distance. We need to look that up
         # in the distance embeddings:
-        truncated_distances = candidate_edge_features[:, 0].minimum((torch.ones(len(candidate_edge_features), device = self.dummy_param.device) * (distance_truncation - 1)))
+        truncated_distances = candidate_edge_features[:, 0].minimum(
+            (
+                torch.ones(
+                    len(candidate_edge_features), device=self._dummy_param.device
+                )
+                * (distance_truncation - 1)
+            )
+        )
         # shape: [CE]
 
         distance_embedding = self._distance_embedding_layer(truncated_distances.long())
@@ -250,7 +274,10 @@ class MLPDecoder(torch.nn.Module):
         edge_candidate_to_graph_map = node_to_graph_map[candidate_edge_targets]
         # add the end bond labels to the end
         edge_candidate_to_graph_map = torch.cat(
-            (edge_candidate_to_graph_map, torch.arange(0, num_graphs_in_batch, device = self.dummy_param.device))
+            (
+                edge_candidate_to_graph_map,
+                torch.arange(0, num_graphs_in_batch, device=self._dummy_param.device),
+            )
         )
 
         edge_candidate_logprobs = traced_unsorted_segment_log_softmax(
@@ -280,7 +307,10 @@ class MLPDecoder(torch.nn.Module):
         # the stop node, so can be zero.
         per_graph_num_correct_edge_choices = torch.max(
             per_graph_num_correct_edge_choices,
-            torch.ones(per_graph_num_correct_edge_choices.shape, device = self.dummy_param.device),
+            torch.ones(
+                per_graph_num_correct_edge_choices.shape,
+                device=self._dummy_param.device,
+            ),
         )  # Shape: [PG]
 
         per_edge_candidate_num_correct_choices = per_graph_num_correct_edge_choices[
@@ -464,11 +494,17 @@ class MLPDecoder(torch.nn.Module):
         # the lightning module
         # TODO add weights of losses into params
 
-        return node_selection_loss +0.07 * first_node_selection_loss+ edge_loss + edge_type_loss + attachment_point_loss
+        return (
+            node_selection_loss
+            + 0.07 * first_node_selection_loss
+            + edge_loss
+            + edge_type_loss
+            + attachment_point_loss
+        )
 
     def forward(
         self,
-        input_molecule_representations, # latent representation
+        input_molecule_representations,  # latent representation
         graph_representations,
         graphs_requiring_node_choices,
         # edge selection
@@ -489,9 +525,7 @@ class MLPDecoder(torch.nn.Module):
         )
 
         # Compute first node logits
-        first_node_logits = self.pick_first_node_type(
-            input_molecule_representations
-        )
+        first_node_logits = self.pick_first_node_type(input_molecule_representations)
 
         # Compute edge logits
         edge_candidate_logits, edge_type_logits = self.pick_edge(

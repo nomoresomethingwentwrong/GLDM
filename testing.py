@@ -10,11 +10,15 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 
 if __name__ == "__main__":
-    
+
     batch_size = 1
     train_split1 = "train_0"
     train_split2 = "train_1000"
     train_split3 = "train_2000"
+    train_split4 = "train_3000"
+    train_split5 = "train_4000"
+    train_split6 = "train_5000"
+    train_split7 = "train_6000"
 
     valid_split = "valid_0"
 
@@ -39,7 +43,43 @@ if __name__ == "__main__":
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split3,
     )
-    train_dataset = ConcatDataset([train_dataset1, train_dataset2, train_dataset3])
+
+    train_dataset4 = MolerDataset(
+        root="/data/ongh0068",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
+        output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
+        split=train_split4,
+    )
+
+    train_dataset5 = MolerDataset(
+        root="/data/ongh0068",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
+        output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
+        split=train_split5,
+    )
+    train_dataset6 = MolerDataset(
+        root="/data/ongh0068",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
+        output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
+        split=train_split6,
+    )
+    train_dataset7 = MolerDataset(
+        root="/data/ongh0068",
+        raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
+        output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
+        split=train_split7,
+    )
+    train_dataset = ConcatDataset(
+        [
+            train_dataset1,
+            train_dataset2,
+            train_dataset3,
+            train_dataset4,
+            train_dataset5,
+            train_dataset6,
+            train_dataset7,
+        ]
+    )
 
     valid_dataset = MolerDataset(
         root="/data/ongh0068",
@@ -47,8 +87,6 @@ if __name__ == "__main__":
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=valid_split,
     )
-
-
 
     train_dataloader = DataLoader(
         train_dataset,
@@ -85,7 +123,12 @@ if __name__ == "__main__":
     )
 
     params = get_params(dataset=train_dataset1)  # train_dataset)
-    model = BaseModel(params, valid_dataset, num_train_batches = len(train_dataloader), batch_size = batch_size)  # train_dataset)
+    model = BaseModel(
+        params,
+        valid_dataset,
+        num_train_batches=len(train_dataloader),
+        batch_size=batch_size,
+    )  # train_dataset)
 
     # Get current time for folder path.
     now = str(datetime.now()).replace(" ", "_").replace(":", "_")
@@ -99,15 +142,18 @@ if __name__ == "__main__":
         monitor="val_loss",
         dirpath=f"../{now}",
         mode="min",
-        filename="{epoch:02d}-{val_f1:.2f}",
+        filename="{epoch:02d}-{val_loss:.2f}",
     )
 
     trainer = Trainer(
         accelerator="gpu",
-        max_epochs=1,
-        devices=[3],
+        max_epochs=10,
+        devices=[1],
         callbacks=[checkpoint_callback, lr_monitor, early_stopping],
         logger=tensorboard_logger,
+        gradient_clip_val=0.5,
+        # detect_anomaly=True,
+        track_grad_norm=2,
     )  # overfit_batches=1)
     trainer.fit(
         model, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader

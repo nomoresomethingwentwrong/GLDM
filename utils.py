@@ -45,7 +45,21 @@ def traced_unsorted_segment_log_softmax(
     exped_recentered_scores = torch.exp(recentered_scores)
 
     per_segment_sums = scatter(exped_recentered_scores, segment_ids, reduce="sum")
-    per_segment_normalization_consts = torch.log(per_segment_sums)
+    per_segment_normalization_consts = torch.log(per_segment_sums + SMALL_NUMBER)
 
     log_probs = recentered_scores - per_segment_normalization_consts[segment_ids]
     return log_probs
+
+def unsorted_segment_softmax(logits, segment_ids):
+    """Same as traced_unsorted_segment_log_softmax except without log."""
+    max_per_segment = scatter(logits, segment_ids, reduce="max")
+
+    scattered_maxes = max_per_segment[segment_ids]
+    recentered_scores = logits - scattered_maxes
+    exped_recentered_scores = torch.exp(recentered_scores)
+
+    per_segment_sums = scatter(exped_recentered_scores, segment_ids, reduce="sum")
+
+    probs = exped_recentered_scores / (per_segment_sums[segment_ids] + SMALL_NUMBER)
+    return probs
+
