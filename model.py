@@ -342,7 +342,7 @@ class BaseModel(LightningModule):
         loss = kld_loss + decoder_loss
 
         logs = {
-            "kld_beta_loss_weight": kld_weight
+            "kld_beta_loss_weight": kld_weight,
             "decoder_loss": decoder_loss,
             "kl": kld_loss,
             "loss": loss,
