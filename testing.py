@@ -136,7 +136,7 @@ if __name__ == "__main__":
     # Callbacks
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tensorboard_logger = TensorBoardLogger(save_dir=f"../{now}", name=f"logs_{now}")
-    early_stopping = EarlyStopping(monitor="val_loss", patience=10)
+    early_stopping = EarlyStopping(monitor="val_loss", patience=3)
     checkpoint_callback = ModelCheckpoint(
         save_top_k=1,
         monitor="val_loss",
@@ -151,9 +151,9 @@ if __name__ == "__main__":
         devices=[1],
         callbacks=[checkpoint_callback, lr_monitor, early_stopping],
         logger=tensorboard_logger,
-        gradient_clip_val=0.5,
+        gradient_clip_val=1.0,
         # detect_anomaly=True,
-        track_grad_norm=2,
+        # track_grad_norm=2,
     )  # overfit_batches=1)
     trainer.fit(
         model, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader

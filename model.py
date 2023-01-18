@@ -333,8 +333,8 @@ class BaseModel(LightningModule):
         ).mean()
         # print("kld_loss", kld_loss)
         # kld weight will start from 0 and increase to the original amount.
-        kld_weight = (
-            1.0 - self._kl_divergence_annealing_beta ** (self.trainer.global_step)
+        kld_weight = ( # cyclical anealing where each cycle will span 1/4 of the training epoch
+            1.0 - self._kl_divergence_annealing_beta ** (self.trainer.global_step % (self._num_train_batches // 4))
         ) * self._kl_divergence_weight
 
         kld_loss *= kld_weight
@@ -342,6 +342,7 @@ class BaseModel(LightningModule):
         loss = kld_loss + decoder_loss
 
         logs = {
+            "kld_beta_loss_weight": kld_weight
             "decoder_loss": decoder_loss,
             "kl": kld_loss,
             "loss": loss,
