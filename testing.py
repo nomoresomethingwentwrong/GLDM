@@ -11,7 +11,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 
 if __name__ == "__main__":
 
-    batch_size = 8
+    batch_size = 1
     train_split1 = "train_0"
     train_split2 = "train_1000"
     train_split3 = "train_2000"
@@ -153,7 +153,7 @@ if __name__ == "__main__":
         logger=tensorboard_logger,
         gradient_clip_val=0.5,
         # detect_anomaly=True,
-        track_grad_norm=2,
+        # track_grad_norm=2,
     )  # overfit_batches=1)
     trainer.fit(
         model, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader
