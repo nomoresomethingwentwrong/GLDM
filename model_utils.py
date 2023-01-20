@@ -58,7 +58,7 @@ class GenericGraphEncoder(torch.nn.Module):
         num_relations=3,
         hidden_layer_feature_dim=64,
         num_layers=12,
-        layer_type=LayerType.FiLMConv,  # "RGATConv",
+        layer_type="FiLMConv",  # "RGATConv",
         use_intermediate_gnn_results=True,
         aggr_layer_type='MoLeRAggregation',
         total_num_moler_aggr_heads=None,  # half will have sigmoid scoring function, half will have softmax scoring functions
@@ -111,10 +111,7 @@ class GenericGraphEncoder(torch.nn.Module):
 
     def forward(self, node_features, edge_index, edge_type_or_attr, batch_index):
         gnn_results = []
-        if any(
-            layer_type in str(self._layer_type)
-            for layer_type in ["FiLMConv", "RGATConv", "RGCNConv", "GATConv"]
-        ):
+        if LayerType[self._layer_type]  in [LayerType.FiLMConv, LayerType.RGATConv, LayerType.RGCNConv, LayerType.GATConv]:
 
             gnn_results += [
                 self._first_layer(node_features, edge_index.long(), edge_type_or_attr)
@@ -124,9 +121,7 @@ class GenericGraphEncoder(torch.nn.Module):
                 gnn_results += [
                     layer(gnn_results[-1], edge_index.long(), edge_type_or_attr)
                 ]
-        elif "GCNConv" in str(
-            self._layer_type
-        ):  # self._layer_type == LayerType.GCNConv: # GCNConv does not require edge features or edge attrs
+        elif LayerType[self._layer_type] == LayerType.GCNConv:  # self._layer_type == LayerType.GCNConv: # GCNConv does not require edge features or edge attrs
 
             gnn_results += [self._first_layer(node_features, edge_index.long())]
 
@@ -299,7 +294,7 @@ def get_encoder_layers(
     act=LeakyReLU(),
 ):
     """Get first layer and encoder layers"""
-    if layer_type == LayerType.FiLMConv:
+    if LayerType[layer_type] == LayerType.FiLMConv:
         first_layer = FiLMConv(
             in_channels=input_feature_dim,
             out_channels=hidden_layer_feature_dim,
@@ -313,7 +308,7 @@ def get_encoder_layers(
             num_relations=num_relations,
             act=act,
         )
-    elif layer_type == LayerType.RGATConv:
+    elif LayerType[layer_type] == LayerType.RGATConv:
         first_layer = RGATConv(
             in_channels=input_feature_dim,
             out_channels=hidden_layer_feature_dim,
@@ -326,7 +321,7 @@ def get_encoder_layers(
             num_relations=num_relations,
         )
 
-    elif layer_type == LayerType.RGCNConv:
+    elif LayerType[layer_type]  == LayerType.RGCNConv:
         first_layer = RGCNConv(
             in_channels=input_feature_dim,
             out_channels=hidden_layer_feature_dim,
@@ -339,7 +334,7 @@ def get_encoder_layers(
             num_relations=num_relations,
         )
 
-    elif layer_type == LayerType.GATConv:
+    elif LayerType[layer_type]  == LayerType.GATConv:
         first_layer = GATConv(
             in_channels=input_feature_dim,
             out_channels=hidden_layer_feature_dim,
@@ -350,7 +345,7 @@ def get_encoder_layers(
             hidden_layer_feature_dim=hidden_layer_feature_dim,
         )
 
-    elif layer_type == LayerType.GCNConv:
+    elif LayerType[layer_type]  == LayerType.GCNConv:
         first_layer = GCNConv(
             in_channels=input_feature_dim,
             out_channels=hidden_layer_feature_dim,
@@ -505,12 +500,14 @@ def get_params(dataset):
             "atom_or_motif_vocab_size": len(dataset.node_type_index_to_string),
             "aggr_layer_type": "MoLeRAggregation",
             "total_num_moler_aggr_heads": 32, 
+            "layer_type": "FiLMConv"
         },
         "partial_graph_encoder": {
             "input_feature_dim": dataset[0].x.shape[-1],
             "atom_or_motif_vocab_size": len(dataset.node_type_index_to_string),
             "aggr_layer_type": "MoLeRAggregation",
             "total_num_moler_aggr_heads": 16, 
+            "layer_type": "FiLMConv"
         },
         "mean_log_var_mlp": {"input_feature_dim": 832, "output_size": 1024},
         "decoder": {
