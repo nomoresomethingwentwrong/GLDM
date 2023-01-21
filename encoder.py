@@ -86,7 +86,7 @@ class PartialGraphEncoder(torch.nn.Module):
         total_num_moler_aggr_heads=None,  # half will have sigmoid scoring function, half will have softmax scoring functions
     ):
         super(PartialGraphEncoder, self).__init__()
-        self._gnn_layer_type = layer_type
+        self._gnn_layer_type = LayerType[layer_type]
         self._dummy_param = torch.nn.Parameter(
             torch.empty(0)
         )  # for inferrring device of model
@@ -97,7 +97,7 @@ class PartialGraphEncoder(torch.nn.Module):
             + 1,  # add one for node in focus bit
             hidden_layer_feature_dim=hidden_layer_feature_dim,
             num_layers=num_layers,
-            layer_type=self._gnn_layer_type,
+            layer_type=layer_type,
             use_intermediate_gnn_results=use_intermediate_gnn_results,
             aggr_layer_type=aggr_layer_type,
             total_num_moler_aggr_heads=total_num_moler_aggr_heads,
