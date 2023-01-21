@@ -38,9 +38,11 @@ class MLPDecoder(torch.nn.Module):
 
         # Node selection
         self._node_type_selector = GenericMLP(**params["node_type_selector"])
-        self._node_type_loss_weights = params[
-            "node_type_loss_weights"
-        ]  # cannot move to gpu yet because trainer has not been instantiated
+        self._node_type_loss_weights = None
+        if params['use_node_type_loss_weights']: # False by default
+            self._node_type_loss_weights = params[
+                "node_type_loss_weights"
+            ]  # cannot move to gpu yet because trainer has not been instantiated
 
         # Edge selection
         self._no_more_edges_representation = torch.nn.Parameter(

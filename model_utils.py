@@ -518,6 +518,7 @@ def get_params(dataset):
                 "input_feature_dim": 1344,
                 "output_size": len(dataset.node_type_index_to_string) + 1,
             },
+            'use_node_type_loss_weights': False, # DON'T use node type loss weights by default
             "node_type_loss_weights": torch.tensor(get_class_weights(dataset)),
             "no_more_edges_repr": (1, 835),
             "edge_candidate_scorer": {"input_feature_dim": 3011, "output_size": 1},
@@ -531,11 +532,11 @@ def get_params(dataset):
         "latent_sample_strategy": "per_graph",
         "latent_repr_dim": 512,
         "latent_repr_size": 512,
-        "kl_divergence_weight": 1.0,
+        "kl_divergence_weight": 0.5,
         "kl_divergence_annealing_beta": 0.999,
         "training_hyperparams": {
-            "max_lr": 1e-3,
-            "div_factor": 25,
+            "max_lr": 5e-3,
+            "div_factor": 10,
             "three_phase": True,
         },
     }
