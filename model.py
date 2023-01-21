@@ -67,29 +67,29 @@ class BaseModel(LightningModule):
         """
 
         # Get some information out from the dataset:
-        next_node_type_distribution = dataset.metadata.get(
-            "train_next_node_type_distribution"
-        )
-        class_weight_factor = params.get(
-            "node_type_predictor_class_loss_weight_factor", 1.0
-        )
+        # next_node_type_distribution = dataset.metadata.get(
+        #     "train_next_node_type_distribution"
+        # )
+        # class_weight_factor = params.get(
+        #     "node_type_predictor_class_loss_weight_factor", 0.0
+        # )
 
-        if not (0.0 <= class_weight_factor <= 1.0):
-            raise ValueError(
-                f"Node class loss weight node_classifier_class_loss_weight_factor must be in [0,1], but is {class_weight_factor}!"
-            )
-        if class_weight_factor > 0:
-            atom_type_nums = [
-                next_node_type_distribution[dataset.node_type_index_to_string[type_idx]]
-                for type_idx in range(dataset.num_node_types)
-            ]
-            atom_type_nums.append(next_node_type_distribution["None"])
+        # if not (0.0 <= class_weight_factor <= 1.0):
+        #     raise ValueError(
+        #         f"Node class loss weight node_classifier_class_loss_weight_factor must be in [0,1], but is {class_weight_factor}!"
+        #     )
+        # if class_weight_factor > 0:
+        #     atom_type_nums = [
+        #         next_node_type_distribution[dataset.node_type_index_to_string[type_idx]]
+        #         for type_idx in range(dataset.num_node_types)
+        #     ]
+        #     atom_type_nums.append(next_node_type_distribution["None"])
 
-            self.class_weights = get_class_balancing_weights(
-                class_counts=atom_type_nums, class_weight_factor=class_weight_factor
-            )
-        else:
-            self.class_weights = None
+        #     self.class_weights = get_class_balancing_weights(
+        #         class_counts=atom_type_nums, class_weight_factor=class_weight_factor
+        #     )
+        # else:
+        #     self.class_weights = None
 
         self._motif_vocabulary = dataset.metadata.get("motif_vocabulary")
         self._uses_motifs = self._motif_vocabulary is not None
@@ -333,9 +333,14 @@ class BaseModel(LightningModule):
         ).mean()
         # print("kld_loss", kld_loss)
         # kld weight will start from 0 and increase to the original amount.
-        kld_weight = ( # cyclical anealing where each cycle will span 1/4 of the training epoch
-            1.0 - self._kl_divergence_annealing_beta ** (self.trainer.global_step % (self._num_train_batches // 4))
-        ) * self._kl_divergence_weight
+        kld_weight = (
+            (  # cyclical anealing where each cycle will span 1/4 of the training epoch
+                1.0
+                - self._kl_divergence_annealing_beta
+                ** (self.trainer.global_step % (self._num_train_batches // 4))
+            )
+            * self._kl_divergence_weight
+        )
 
         kld_loss *= kld_weight
 
@@ -364,15 +369,15 @@ class BaseModel(LightningModule):
         return loss
 
     def configure_optimizers(self):
-        # optimizer = torch.optim.Adam(
-        #     self.parameters(), lr=self._training_hyperparams["max_lr"]
-        # )
-
-        optimizer = torch.optim.AdamW(
-            self.parameters(),
-            lr=self._training_hyperparams["max_lr"],
-            betas=(0.9, 0.999),
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=self._training_hyperparams["max_lr"]
         )
+
+        # optimizer = torch.optim.AdamW(
+        #     self.parameters(),
+        #     lr=self._training_hyperparams["max_lr"],
+        #     betas=(0.9, 0.999),
+        # )
         lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer=optimizer,
             max_lr=self._training_hyperparams["max_lr"],
