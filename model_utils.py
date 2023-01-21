@@ -60,14 +60,14 @@ class GenericGraphEncoder(torch.nn.Module):
         num_layers=12,
         layer_type="FiLMConv",  # "RGATConv",
         use_intermediate_gnn_results=True,
-        aggr_layer_type='MoLeRAggregation',
+        aggr_layer_type="MoLeRAggregation",
         total_num_moler_aggr_heads=None,  # half will have sigmoid scoring function, half will have softmax scoring functions
     ):
         super(GenericGraphEncoder, self).__init__()
-        self._layer_type = layer_type
+        self._layer_type = LayerType[layer_type]
 
         self._first_layer, self._encoder_layers = get_encoder_layers(
-            layer_type=layer_type,
+            layer_type=self._layer_type,
             num_layers=num_layers,
             input_feature_dim=input_feature_dim,
             hidden_layer_feature_dim=hidden_layer_feature_dim,
@@ -111,8 +111,12 @@ class GenericGraphEncoder(torch.nn.Module):
 
     def forward(self, node_features, edge_index, edge_type_or_attr, batch_index):
         gnn_results = []
-        if LayerType[self._layer_type]  in [LayerType.FiLMConv, LayerType.RGATConv, LayerType.RGCNConv, LayerType.GATConv]:
-
+        if self._layer_type in [
+            LayerType.FiLMConv,
+            LayerType.RGATConv,
+            LayerType.RGCNConv,
+            LayerType.GATConv,
+        ]:
             gnn_results += [
                 self._first_layer(node_features, edge_index.long(), edge_type_or_attr)
             ]
@@ -121,8 +125,7 @@ class GenericGraphEncoder(torch.nn.Module):
                 gnn_results += [
                     layer(gnn_results[-1], edge_index.long(), edge_type_or_attr)
                 ]
-        elif LayerType[self._layer_type] == LayerType.GCNConv:  # self._layer_type == LayerType.GCNConv: # GCNConv does not require edge features or edge attrs
-
+        elif self._layer_type == LayerType.GCNConv: # GCNConv does not require edge features or edge attrs
             gnn_results += [self._first_layer(node_features, edge_index.long())]
 
             for layer in self._encoder_layers:
@@ -515,6 +518,7 @@ def get_params(dataset):
                 "input_feature_dim": 1344,
                 "output_size": len(dataset.node_type_index_to_string) + 1,
             },
+            "use_node_type_loss_weights": False,  # DON'T use node type loss weights by default
             "node_type_loss_weights": torch.tensor(get_class_weights(dataset)),
             "no_more_edges_repr": (1, 835),
             "edge_candidate_scorer": {"input_feature_dim": 3011, "output_size": 1},
@@ -528,11 +532,11 @@ def get_params(dataset):
         "latent_sample_strategy": "per_graph",
         "latent_repr_dim": 512,
         "latent_repr_size": 512,
-        "kl_divergence_weight": 0.02,
+        "kl_divergence_weight": 0.5,
         "kl_divergence_annealing_beta": 0.999,
         "training_hyperparams": {
-            "max_lr": 1e-3,
-            "div_factor": 25,
+            "max_lr": 5e-3,
+            "div_factor": 10,
             "three_phase": True,
         },
     }

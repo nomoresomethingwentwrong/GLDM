@@ -11,6 +11,7 @@ import sys
 from tqdm import tqdm
 from enum import Enum, auto
 
+
 class EdgeRepresentation(Enum):
     edge_attr = auto()
     edge_type = auto()
@@ -24,15 +25,18 @@ to_increment_by_num_nodes_in_graph = [
     "valid_edge_choices",
     # pick attachment points
     "candidate_attachment_points",
-    # pick edge 
+    # pick edge
     "focus_atoms",
     "candidate_edge_targets",
     "candidate_edge_type_masks",
 ]
 
+
 def chunk_list(elems, chunk_size):
     for i in range(0, len(elems), chunk_size):
-        yield elems[i:i + chunk_size]
+        yield elems[i : i + chunk_size]
+
+
 class MolerData(Data):
     """To ensure that both the original graph and the partial graph edge indices are incremented."""
 
@@ -65,10 +69,11 @@ class MolerData(Data):
             return super().__inc__(key, value, *args, **kwargs)
 
     def __cat_dim__(self, key, value, *args, **kwargs):
-        if key == 'latent_representation':
+        if key == "latent_representation":
             return None
         else:
             return super().__cat_dim__(key, value, *args, **kwargs)
+
 
 def get_motif_type_to_node_type_index_map(motif_vocabulary, num_atom_types):
     """Helper to construct a mapping from motif type to shifted node type."""
@@ -77,7 +82,6 @@ def get_motif_type_to_node_type_index_map(motif_vocabulary, num_atom_types):
         motif: num_atom_types + motif_type
         for motif, motif_type in motif_vocabulary.vocabulary.items()
     }
-
 
 
 class MolerDataset(Dataset):
@@ -91,7 +95,7 @@ class MolerDataset(Dataset):
         pre_transform=None,
         using_self_loops=False,
         gen_step_drop_probability=0.0,
-        edge_repr= EdgeRepresentation.edge_attr,
+        edge_repr=EdgeRepresentation.edge_attr,
     ):
         self._processed_file_paths = None
         self._transform = transform
@@ -198,8 +202,7 @@ class MolerDataset(Dataset):
         return [self.node_type_to_index(node_type) for node_type in node_types]
 
     def node_types_to_multi_hot(self, node_types):
-        """Convert between string representation to multi hot encoding of correct node types.
-        """
+        """Convert between string representation to multi hot encoding of correct node types."""
         correct_indices = self.node_types_to_indices(node_types)
         multihot = np.zeros(shape=(self.num_node_types,), dtype=np.float32)
         for idx in correct_indices:
@@ -278,30 +281,42 @@ class MolerDataset(Dataset):
             future_saved_file_paths = []
             chunk_size = 1000
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                future_gen_steps_to_pkl_file_path = [executor.submit(self._convert_data_shard_to_list_of_trace_steps, pkl_file_path) for pkl_file_path in self.raw_file_names]
-                with tqdm(total = len(self.raw_file_names)) as pbar:
-                    for future_gen_steps in concurrent.futures.as_completed(future_gen_steps_to_pkl_file_path):
+                future_gen_steps_to_pkl_file_path = [
+                    executor.submit(
+                        self._convert_data_shard_to_list_of_trace_steps, pkl_file_path
+                    )
+                    for pkl_file_path in self.raw_file_names
+                ]
+                with tqdm(total=len(self.raw_file_names)) as pbar:
+                    for future_gen_steps in concurrent.futures.as_completed(
+                        future_gen_steps_to_pkl_file_path
+                    ):
                         current_generation_steps = future_gen_steps.result()
-                        
+
                         # put all the generatoin steps into the queue
                         generation_steps += current_generation_steps
                         pbar.update(1)
 
-                future_saved_file_paths += [executor.submit(self._save_processed_gen_step, chunk, i) for i, chunk in enumerate(chunk_list(generation_steps, chunk_size=chunk_size))]
-                    
-                with tqdm(total = len(self.raw_file_names)) as pbar:
-                    for future in concurrent.futures.as_completed(future_saved_file_paths):
-                        results += [future.result()]  
+                future_saved_file_paths += [
+                    executor.submit(self._save_processed_gen_step, chunk, i)
+                    for i, chunk in enumerate(
+                        chunk_list(generation_steps, chunk_size=chunk_size)
+                    )
+                ]
+
+                with tqdm(total=len(self.raw_file_names)) as pbar:
+                    for future in concurrent.futures.as_completed(
+                        future_saved_file_paths
+                    ):
+                        results += [future.result()]
                         pbar.update(1)
 
-
-                        
                 # accumulated_generation_steps = []
                 # with tqdm(total = len(self.raw_file_names)) as pbar:
                 #     for future_gen_steps in concurrent.futures.as_completed(future_gen_steps_to_pkl_file_path):
                 #         pkl_file_path = future_gen_steps_to_pkl_file_path[future_gen_steps]
                 #         current_generation_steps = future_gen_steps.result()
-                        
+
                 #         accumulated_generation_steps += current_generation_steps
                 #         accumulated_num_steps += len(current_generation_steps)
 
@@ -313,18 +328,15 @@ class MolerDataset(Dataset):
                 # future_saved_file_paths = [executor.submit(self._save_processed_gen_step, molecule_gen_steps, pkl_file_path) for molecule_gen_steps, pkl_file_path in generation_steps]
                 # with tqdm(total = len(generation_steps)) as pbar:
                 #     for future in concurrent.futures.as_completed(future_saved_file_paths):
-                #         results += [future.result()]  
+                #         results += [future.result()]
                 #         pbar.update(1)
-                    
+
             self.generate_preprocessed_file_paths_csv(
                 preprocessed_file_paths_folder=os.path.join(
                     self._output_pyg_trace_dataset_parent_folder, self._split
                 ),
                 results=results,
             )
-
-    
-
 
     def _save_processed_gen_step(self, molecule_gen_steps, id):
         """Saves a list of trace steps corresponding to different molecules."""
@@ -343,9 +355,7 @@ class MolerDataset(Dataset):
         # file_name = (
         #     f'{pkl_file_path.split("/")[-1].split(".")[0]}_nsteps_{len(molecule_gen_steps)}.pkl.gz'  #
         # )
-        file_name = (
-            f'{id}_nsteps_{len(molecule_gen_steps)}.pkl.gz'
-        )
+        file_name = f"{id}_nsteps_{len(molecule_gen_steps)}.pkl.gz"
 
         file_path = os.path.join(
             self._output_pyg_trace_dataset_parent_folder,
@@ -353,20 +363,23 @@ class MolerDataset(Dataset):
             file_name,
         )
         # batch them together
-        molecule_gen_steps = Batch.from_data_list(molecule_gen_steps, follow_batch = [
-            'correct_edge_choices',
-            'correct_edge_types',
-            'valid_edge_choices',
-            'valid_attachment_point_choices',
-            'correct_attachment_point_choice',
-            'correct_node_type_choices',
-            'original_graph_x',
-            'correct_first_node_type_choices',
-            # pick attachment points
-            'candidate_attachment_points',
-            # pick edge
-            'candidate_edge_targets'
-        ])
+        molecule_gen_steps = Batch.from_data_list(
+            molecule_gen_steps,
+            follow_batch=[
+                "correct_edge_choices",
+                "correct_edge_types",
+                "valid_edge_choices",
+                "valid_attachment_point_choices",
+                "correct_attachment_point_choice",
+                "correct_node_type_choices",
+                "original_graph_x",
+                "correct_first_node_type_choices",
+                # pick attachment points
+                "candidate_attachment_points",
+                # pick edge
+                "candidate_edge_targets",
+            ],
+        )
         with gzip.open(file_path, "wb") as shard_file_path:
             pickle.dump(molecule_gen_steps, shard_file_path)
 
@@ -412,7 +425,9 @@ class MolerDataset(Dataset):
                     edge_types += [i] * len(adj_list)
 
             # add self loops
-            if self._using_self_loops: # by default this is not used since pyg layers cover this
+            if (
+                self._using_self_loops
+            ):  # by default this is not used since pyg layers cover this
                 num_nodes_in_original_graph = molecule.node_features.shape[0]
                 edge_indexes += [
                     self._generate_self_loops(num_nodes=num_nodes_in_original_graph).T
@@ -431,9 +446,9 @@ class MolerDataset(Dataset):
                 edge_attr = edge_types
                 # TODO: add other edge features produced from preprocessing
                 gen_step_features["original_graph_edge_features"] = np.array(edge_attr)
-            else: 
+            else:
                 raise NotImplementedError
-            
+
             gen_step_features[
                 "original_graph_node_categorical_features"
             ] = molecule.node_categorical_features
@@ -477,7 +492,7 @@ class MolerDataset(Dataset):
                 edge_attr = edge_types
                 # TODO: add other edge features produced from preprocessing
                 gen_step_features["partial_graph_edge_features"] = np.array(edge_attr)
-            else: 
+            else:
                 raise NotImplementedError
 
             gen_step_features["edge_features"] = np.array(gen_step.edge_features)
@@ -508,17 +523,25 @@ class MolerDataset(Dataset):
             # And finally, the correct node type choices. Here, we have an empty list of
             # correct choices for all steps where we didn't choose a node, so we skip that:
             if gen_step.correct_node_type_choices is not None:
-                gen_step_features[
-                    "correct_node_type_choices"
-                ] = np.array([self.node_types_to_multi_hot(gen_step.correct_node_type_choices)])
+                gen_step_features["correct_node_type_choices"] = np.array(
+                    [self.node_types_to_multi_hot(gen_step.correct_node_type_choices)]
+                )
             else:
-                gen_step_features["correct_node_type_choices"] = np.zeros(shape = (0,) + (self.num_node_types, ))
+                gen_step_features["correct_node_type_choices"] = np.zeros(
+                    shape=(0,) + (self.num_node_types,)
+                )
             if molecule.correct_first_node_type_choices is not None:
-                gen_step_features[
-                    "correct_first_node_type_choices"
-                ] = np.array([self.node_types_to_multi_hot(molecule.correct_first_node_type_choices)])
+                gen_step_features["correct_first_node_type_choices"] = np.array(
+                    [
+                        self.node_types_to_multi_hot(
+                            molecule.correct_first_node_type_choices
+                        )
+                    ]
+                )
             else:
-                gen_step_features["correct_first_node_type_choices"] = np.zeros(shape = (0,) + (self.num_node_types, ))
+                gen_step_features["correct_first_node_type_choices"] = np.zeros(
+                    shape=(0,) + (self.num_node_types,)
+                )
             # Add graph_property_values
             gen_step_features = {**gen_step_features, **molecule_property_values}
             molecule_gen_steps += [gen_step_features]
@@ -571,7 +594,31 @@ class MolerDataset(Dataset):
         file_path = self.processed_file_names[idx]
         with gzip.open(file_path, "rb") as f:
             data = pickle.load(f)
-        return data
+        if self._split == 'train' and self._gen_step_drop_probability > 0:
+            unrolled = data.to_data_list()
+            selected_idx = np.arange(len(unrolled))[
+                np.random.rand(len(unrolled)) > self._gen_step_drop_probability
+            ]
+            data = Batch.from_data_list(
+                [unrolled[i] for i in selected_idx],
+                follow_batch=[
+                    "correct_edge_choices",
+                    "correct_edge_types",
+                    "valid_edge_choices",
+                    "valid_attachment_point_choices",
+                    "correct_attachment_point_choice",
+                    "correct_node_type_choices",
+                    "original_graph_x",
+                    "correct_first_node_type_choices",
+                    # pick attachment points
+                    "candidate_attachment_points",
+                    # pick edge
+                    "candidate_edge_targets",
+                ],
+            )
+        else:
+            return data
+
         ###################################################################################
         # DEPRECATED: Previously we read in a list of individual trace steps, but now we batch them together
         # during `process()` itself
@@ -597,4 +644,3 @@ class MolerDataset(Dataset):
         ###################################################################################
 
         # alternative for reading in individual .pt files (NOTE currently infeasible)
-
