@@ -594,28 +594,30 @@ class MolerDataset(Dataset):
         file_path = self.processed_file_names[idx]
         with gzip.open(file_path, "rb") as f:
             data = pickle.load(f)
-
-        unrolled = data.to_data_list()
-        selected_idx = np.arange(len(unrolled))[
-            np.random.rand(len(unrolled)) > self._gen_step_drop_probability
-        ]
-        return Batch.from_data_list(
-            [unrolled[i] for i in selected_idx],
-            follow_batch=[
-                "correct_edge_choices",
-                "correct_edge_types",
-                "valid_edge_choices",
-                "valid_attachment_point_choices",
-                "correct_attachment_point_choice",
-                "correct_node_type_choices",
-                "original_graph_x",
-                "correct_first_node_type_choices",
-                # pick attachment points
-                "candidate_attachment_points",
-                # pick edge
-                "candidate_edge_targets",
-            ],
-        )
+        if self._split == 'train' and self._gen_step_drop_probability > 0:
+            unrolled = data.to_data_list()
+            selected_idx = np.arange(len(unrolled))[
+                np.random.rand(len(unrolled)) > self._gen_step_drop_probability
+            ]
+            data = Batch.from_data_list(
+                [unrolled[i] for i in selected_idx],
+                follow_batch=[
+                    "correct_edge_choices",
+                    "correct_edge_types",
+                    "valid_edge_choices",
+                    "valid_attachment_point_choices",
+                    "correct_attachment_point_choice",
+                    "correct_node_type_choices",
+                    "original_graph_x",
+                    "correct_first_node_type_choices",
+                    # pick attachment points
+                    "candidate_attachment_points",
+                    # pick edge
+                    "candidate_edge_targets",
+                ],
+            )
+        else:
+            return data
 
         ###################################################################################
         # DEPRECATED: Previously we read in a list of individual trace steps, but now we batch them together
