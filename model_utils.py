@@ -58,16 +58,16 @@ class GenericGraphEncoder(torch.nn.Module):
         num_relations=3,
         hidden_layer_feature_dim=64,
         num_layers=12,
-        layer_type=LayerType.FiLMConv,  # "RGATConv",
+        layer_type="FiLMConv",  # "RGATConv",
         use_intermediate_gnn_results=True,
-        aggr_layer_type='MoLeRAggregation',
+        aggr_layer_type="MoLeRAggregation",
         total_num_moler_aggr_heads=None,  # half will have sigmoid scoring function, half will have softmax scoring functions
     ):
         super(GenericGraphEncoder, self).__init__()
-        self._layer_type = layer_type
+        self._layer_type = LayerType[layer_type]
 
         self._first_layer, self._encoder_layers = get_encoder_layers(
-            layer_type=layer_type,
+            layer_type=self._layer_type,
             num_layers=num_layers,
             input_feature_dim=input_feature_dim,
             hidden_layer_feature_dim=hidden_layer_feature_dim,
@@ -111,11 +111,13 @@ class GenericGraphEncoder(torch.nn.Module):
 
     def forward(self, node_features, edge_index, edge_type_or_attr, batch_index):
         gnn_results = []
-        if any(
-            layer_type in str(self._layer_type)
-            for layer_type in ["FiLMConv", "RGATConv", "RGCNConv", "GATConv"]
-        ):
 
+        if self._layer_type in [
+            LayerType.FiLMConv,
+            LayerType.RGATConv,
+            LayerType.RGCNConv,
+            LayerType.GATConv,
+        ]:
             gnn_results += [
                 self._first_layer(node_features, edge_index.long(), edge_type_or_attr)
             ]
@@ -124,9 +126,7 @@ class GenericGraphEncoder(torch.nn.Module):
                 gnn_results += [
                     layer(gnn_results[-1], edge_index.long(), edge_type_or_attr)
                 ]
-        elif "GCNConv" in str(
-            self._layer_type
-        ):  # self._layer_type == LayerType.GCNConv: # GCNConv does not require edge features or edge attrs
+        elif self._layer_type == LayerType.GCNConv: # GCNConv does not require edge features or edge attrs
 
             gnn_results += [self._first_layer(node_features, edge_index.long())]
 
@@ -504,13 +504,15 @@ def get_params(dataset):
             "input_feature_dim": dataset[0].x.shape[-1],
             "atom_or_motif_vocab_size": len(dataset.node_type_index_to_string),
             "aggr_layer_type": "MoLeRAggregation",
-            "total_num_moler_aggr_heads": 32, 
+            "total_num_moler_aggr_heads": 32,
+            'layer_type':'FiLMConv',
         },
         "partial_graph_encoder": {
             "input_feature_dim": dataset[0].x.shape[-1],
             "atom_or_motif_vocab_size": len(dataset.node_type_index_to_string),
             "aggr_layer_type": "MoLeRAggregation",
-            "total_num_moler_aggr_heads": 16, 
+            "total_num_moler_aggr_heads": 16,
+            'layer_type':'FiLMConv',
         },
         "mean_log_var_mlp": {"input_feature_dim": 832, "output_size": 1024},
         "decoder": {
@@ -518,7 +520,7 @@ def get_params(dataset):
                 "input_feature_dim": 1344,
                 "output_size": len(dataset.node_type_index_to_string) + 1,
             },
-            'use_node_type_loss_weights': False, # DON'T use node type loss weights by default
+            "use_node_type_loss_weights": False,  # DON'T use node type loss weights by default
             "node_type_loss_weights": torch.tensor(get_class_weights(dataset)),
             "no_more_edges_repr": (1, 835),
             "edge_candidate_scorer": {"input_feature_dim": 3011, "output_size": 1},
