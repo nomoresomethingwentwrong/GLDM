@@ -67,7 +67,7 @@ class GenericGraphEncoder(torch.nn.Module):
         self._layer_type = LayerType[layer_type]
 
         self._first_layer, self._encoder_layers = get_encoder_layers(
-            layer_type=self._layer_type,
+            layer_type=layer_type,
             num_layers=num_layers,
             input_feature_dim=input_feature_dim,
             hidden_layer_feature_dim=hidden_layer_feature_dim,

@@ -136,7 +136,7 @@ if __name__ == "__main__":
     # Callbacks
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tensorboard_logger = TensorBoardLogger(save_dir=f"../{now}", name=f"logs_{now}")
-    early_stopping = EarlyStopping(monitor="val_loss", patience=3)
+    # early_stopping = EarlyStopping(monitor="val_loss", patience=3)
     checkpoint_callback = ModelCheckpoint(
         save_top_k=1,
         monitor="val_loss",
@@ -147,9 +147,9 @@ if __name__ == "__main__":
 
     trainer = Trainer(
         accelerator="gpu",
-        max_epochs=100,
+        max_epochs=1000,
         devices=[0],
-        callbacks=[checkpoint_callback, lr_monitor, early_stopping],
+        callbacks=[checkpoint_callback, lr_monitor],
         logger=tensorboard_logger,
         gradient_clip_val=1.0,
         overfit_batches=1
