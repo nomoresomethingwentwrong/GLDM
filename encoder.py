@@ -54,14 +54,12 @@ class GraphEncoder(torch.nn.Module):
             LayerType.RGATConv,
             LayerType.RGCNConv,
         ]:
-
             edge_type = edge_features.int()
             input_molecule_representations, _ = self._model(
                 node_features, edge_index.long(), edge_type, batch_index
             )
         ############ GNN layers that take in `edge_attr`###############
         elif self._gnn_layer_type in [LayerType.GATConv, LayerType.GCNConv]:
-
             edge_attr = edge_features.float()
             input_molecule_representations, _ = self._model(
                 node_features, edge_index.long(), edge_attr, batch_index
@@ -157,6 +155,7 @@ class PartialGraphEncoder(torch.nn.Module):
             )
         ############ GNN layers that take in `edge_attr`###############
         elif self._gnn_layer_type in [LayerType.GATConv, LayerType.GCNConv]:
+
             edge_attr = edge_features.float()
             partial_graph_representions, node_representations = self._model(
                 initial_node_features, edge_index.long(), edge_attr, batch_index
