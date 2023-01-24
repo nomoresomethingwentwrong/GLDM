@@ -53,18 +53,20 @@ class BaseModel(LightningModule):
         self._mean_log_var_mlp = GenericMLP(**self._params["mean_log_var_mlp"])
 
         # MLP for regression task on graph properties
-        self._graph_property_pred_loss_weight = self._params[
-            "graph_property_pred_loss_weight"
-        ]
-        self._property_predictors = torch.nn.ModuleDict()
-        for prop_name, prop_params in self._params["graph_properties"].items():
-            prop_stddev = dataset.metadata.get(f"{prop_name}_stddev")
-            if not (prop_params.get("normalise_loss", True)):
-                prop_stddev = None
-            self._property_predictors[prop_name] = PropertyRegressionMLP(
-                **prop_params["mlp"],
-                property_stddev=prop_stddev,
-            )
+        self._include_property_regressors = "graph_properties" in self._params
+        if self._include_property_regressors:
+            self._graph_property_pred_loss_weight = self._params[
+                "graph_property_pred_loss_weight"
+            ]
+            self._property_predictors = torch.nn.ModuleDict()
+            for prop_name, prop_params in self._params["graph_properties"].items():
+                prop_stddev = dataset.metadata.get(f"{prop_name}_stddev")
+                if not (prop_params.get("normalise_loss", True)):
+                    prop_stddev = None
+                self._property_predictors[prop_name] = PropertyRegressionMLP(
+                    **prop_params["mlp"],
+                    property_stddev=prop_stddev,
+                )
 
         # MLP decoders
         self._decoder = MLPDecoder(self._params["decoder"])
@@ -346,14 +348,16 @@ class BaseModel(LightningModule):
     def step(self, batch):
         moler_output = self._run_step(batch)
 
-        decoder_loss = self.compute_loss(moler_output=moler_output, batch=batch)
-
-        property_prediction_loss = (
-            self._graph_property_pred_loss_weight
-            * self.compute_property_prediction_loss(
-                latent_representation=moler_output.latent_representation, batch=batch
+        loss_metrics = {}
+        loss_metrics['decoder_loss'] = self.compute_loss(moler_output=moler_output, batch=batch)
+        if self._include_property_regressors:
+            loss_metrics['property_prediction_loss'] = (
+                self._graph_property_pred_loss_weight
+                * self.compute_property_prediction_loss(
+                    latent_representation=moler_output.latent_representation,
+                    batch=batch,
+                )
             )
-        )
         # print("log_var", torch.max(moler_output.log_var))
         # kld_loss = torch.mean(
         #     -0.5
@@ -366,12 +370,12 @@ class BaseModel(LightningModule):
         #     ),
         #     dim=0,
         # )
-        kld_loss = torch.distributions.kl_divergence(
+        loss_metrics['kld_loss'] = torch.distributions.kl_divergence(
             moler_output.q, moler_output.p
         ).mean()
         # print("kld_loss", kld_loss)
         # kld weight will start from 0 and increase to the original amount.
-        kld_weight = (
+        loss_metrics['kld_weight'] = (
             (  # cyclical anealing where each cycle will span 1/4 of the training epoch
                 1.0
                 - self._kl_divergence_annealing_beta
@@ -380,16 +384,11 @@ class BaseModel(LightningModule):
             * self._kl_divergence_weight
         )
 
-        kld_loss *= kld_weight
+        loss_metrics['kld_loss'] *= loss_metrics['kld_weight']
 
-        loss = kld_loss + decoder_loss + property_prediction_loss
+        loss = sum(loss_metrics.values())
 
-        logs = {
-            "kld_beta_loss_weight": kld_weight,
-            "decoder_loss": decoder_loss,
-            "kl": kld_loss,
-            "loss": loss,
-        }
+        logs = loss_metrics
         return loss, logs
 
     def training_step(self, batch, batch_idx):
