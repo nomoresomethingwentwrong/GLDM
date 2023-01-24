@@ -94,7 +94,7 @@ class MolerDataset(Dataset):
         transform=None,
         pre_transform=None,
         using_self_loops=False,
-        gen_step_drop_probability=0.0,
+        gen_step_drop_probability=0.5,
         edge_repr=EdgeRepresentation.edge_attr,
     ):
         self._processed_file_paths = None

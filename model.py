@@ -379,7 +379,8 @@ class BaseModel(LightningModule):
             (  # cyclical anealing where each cycle will span 1/4 of the training epoch
                 1.0
                 - self._kl_divergence_annealing_beta
-                ** (self.trainer.global_step % (self._num_train_batches // 4))
+                # ** (self.trainer.global_step % (self._num_train_batches // 4))
+                **self.trainer.global_step
             )
             * self._kl_divergence_weight
         )
