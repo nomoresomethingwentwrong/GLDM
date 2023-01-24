@@ -1,7 +1,7 @@
 import sys
 import itertools
 from pytorch_lightning import LightningModule
-from model_utils import GenericMLP, MoLeROutput
+from model_utils import GenericMLP, MoLeROutput, PropertyRegressionMLP
 from encoder import GraphEncoder, PartialGraphEncoder
 
 from decoder import MLPDecoder
@@ -41,7 +41,8 @@ class BaseModel(LightningModule):
         self._params = params
         self._num_train_batches = num_train_batches
         self._batch_size = batch_size
-        self._use_oclr_scheduler = params['use_oclr_scheduler']
+        self._use_oclr_scheduler = params["use_oclr_scheduler"]
+
         # Graph encoders
         self._full_graph_encoder = GraphEncoder(**self._params["full_graph_encoder"])
         self._partial_graph_encoder = PartialGraphEncoder(
@@ -50,6 +51,20 @@ class BaseModel(LightningModule):
 
         # Replace this with any other latent space mapping techniques eg diffusion
         self._mean_log_var_mlp = GenericMLP(**self._params["mean_log_var_mlp"])
+
+        # MLP for regression task on graph properties
+        self._graph_property_pred_loss_weight = self._params[
+            "graph_property_pred_loss_weight"
+        ]
+        self._property_predictors = torch.nn.ModuleDict()
+        for prop_name, prop_params in self._params["graph_properties"].items():
+            prop_stddev = dataset.metadata.get(f"{prop_name}_stddev")
+            if not (prop_params.get("normalise_loss", True)):
+                prop_stddev = None
+            self._property_predictors[prop_name] = PropertyRegressionMLP(
+                **prop_params["mlp"],
+                property_stddev=prop_stddev,
+            )
 
         # MLP decoders
         self._decoder = MLPDecoder(self._params["decoder"])
@@ -272,6 +287,7 @@ class BaseModel(LightningModule):
             # log_var=log_var,
             p=p,
             q=q,
+            latent_representation=latent_representation,
         )
 
     def compute_loss(self, moler_output, batch):
@@ -314,10 +330,30 @@ class BaseModel(LightningModule):
 
         return loss
 
+    def compute_property_prediction_loss(self, latent_representation, batch):
+        """TODO: Since graph property regression is more of a auxillary loss than anything, this function will be
+        decoupled in the future into `compute_properties` and `compute_property_prediction_loss` so that
+        it can be passed into the `_run_step` function and returned in MolerOutput."""
+        property_prediction_losses = {}
+        for prop_name, property_predictor in self._property_predictors.items():
+            predictions = property_predictor(latent_representation)
+            property_prediction_losses[prop_name] = property_predictor.compute_loss(
+                predictions=predictions, labels=batch[prop_name]
+            )
+        # sum up all the property prediction losses
+        return sum([loss for loss in property_prediction_losses.values()])
+
     def step(self, batch):
         moler_output = self._run_step(batch)
 
         decoder_loss = self.compute_loss(moler_output=moler_output, batch=batch)
+
+        property_prediction_loss = (
+            self._graph_property_pred_loss_weight
+            * self.compute_property_prediction_loss(
+                latent_representation=moler_output.latent_representation, batch=batch
+            )
+        )
         # print("log_var", torch.max(moler_output.log_var))
         # kld_loss = torch.mean(
         #     -0.5
@@ -346,7 +382,7 @@ class BaseModel(LightningModule):
 
         kld_loss *= kld_weight
 
-        loss = kld_loss + decoder_loss
+        loss = kld_loss + decoder_loss + property_prediction_loss
 
         logs = {
             "kld_beta_loss_weight": kld_weight,

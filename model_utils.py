@@ -30,6 +30,7 @@ class MoLeROutput:
     attachment_point_selection_logits: torch.Tensor
     p: torch.Tensor
     q: torch.Tensor
+    latent_representation: torch.Tensor
 
 
 class LayerType(Enum):
@@ -183,6 +184,48 @@ class GenericMLP(torch.nn.Module):
         x = self._final_layer(x)
         return x
 
+
+class PropertyRegressionMLP(torch.nn.Module):
+    def __init__(
+        self,
+        input_feature_dim,
+        output_size,
+        property_stddev=None,  # for ensuring the properties are all on the same scale
+        hidden_layer_dims=[256, 256],
+        activation_layer_type="leaky_relu",
+        dropout_prob=0.2,
+        loss_weight_factor=1.0,
+    ):
+        super(PropertyRegressionMLP, self).__init__()
+        self._property_stddev = property_stddev
+        self._loss_weight_factor = loss_weight_factor
+        self._mlp = GenericMLP(
+            input_feature_dim = input_feature_dim,
+            output_size = output_size,
+            hidden_layer_dims=hidden_layer_dims,
+            activation_layer_type=activation_layer_type,
+            dropout_prob=dropout_prob,
+        )
+    def forward(
+        self,
+        latent_representation,
+    ):
+        return self._mlp(latent_representation)
+
+
+    def compute_loss(
+        self,
+        predictions,
+        labels, 
+    ):
+        """Return L2 loss and scale it by std dev"""
+        if self._property_stddev is None:
+            loss = torch.nn.functional.mse_loss(predictions, labels)
+        else:
+            abs_error = torch.nn.functional.l1_loss(predictions, labels)
+            normalised_abs_error = abs_error /self._property_stddev
+            loss = torch.square(normalised_abs_error) 
+        return self._loss_weight_factor * loss
 
 class WeightedSumGraphRepresentation(torch.nn.Module):
     def __init__(
@@ -542,6 +585,64 @@ def get_params(dataset):
                 "dropout_prob": 0.0,
             },
         },
+        "graph_properties": {
+            "sa_score": {
+                "type": "regression",
+                "normalise_loss": True, # normalise loss by standard deviation
+                "mlp": {
+                    "input_feature_dim": 512,
+                    "output_size": 1,
+                    "hidden_layer_dims": [64, 32],
+                    "dropout_prob": 0.0,
+                    "loss_weight_factor": 0.33,
+                }
+            },
+            "clogp": {
+                "type": "regression",
+                "normalise_loss": True, # normalise loss by standard deviation
+                "mlp": {
+                    "input_feature_dim": 512,
+                    "output_size": 1,
+                    "hidden_layer_dims": [64, 32],
+                    "dropout_prob": 0.0,
+                    "loss_weight_factor": 0.33,
+                }
+            },
+            "mol_weight": {
+                "type": "regression",
+                "normalise_loss": True, # normalise loss by standard deviation
+                "mlp": {
+                    "input_feature_dim": 512,
+                    "output_size": 1,
+                    "hidden_layer_dims": [64, 32],
+                    "dropout_prob": 0.0,
+                    "loss_weight_factor": 0.33,
+                }
+            },
+            # "qed": {
+                # "type": "regression",
+                # "normalise_loss": True, # normalise loss by standard deviation
+                # "loss_weight_factor": 0.33,
+                # "mlp": {
+                #     "input_feature_dim": 512,
+                #     "output_size": 1,
+                #     "hidden_layer_dims": [64, 32],
+                #     "dropout_prob": 0.0,
+                # }
+            # },
+            # "bertz": {
+                # "type": "regression",
+                # "normalise_loss": True, # normalise loss by standard deviation
+                # "loss_weight_factor": 0.33,
+                # "mlp": {
+                #     "input_feature_dim": 512,
+                #     "output_size": 1,
+                #     "hidden_layer_dims": [64, 32],
+                #     "dropout_prob": 0.0,
+                # }
+            # },
+        },
+        "graph_property_pred_loss_weight": 0.1, # loss weight in the overall loss term is 0.1
         "latent_sample_strategy": "per_graph",
         "latent_repr_dim": 512,
         "latent_repr_size": 512,
@@ -552,5 +653,5 @@ def get_params(dataset):
             "div_factor": 10,
             "three_phase": True,
         },
-        "use_oclr_scheduler": False # doesn't use oclr by default
+        "use_oclr_scheduler": False,  # doesn't use oclr by default
     }
