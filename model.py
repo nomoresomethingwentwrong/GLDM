@@ -3,7 +3,8 @@ import itertools
 from pytorch_lightning import LightningModule
 from model_utils import GenericMLP, MoLeROutput, PropertyRegressionMLP
 from encoder import GraphEncoder, PartialGraphEncoder
-
+from rdkit.Chem import Draw
+from rdkit import Chem
 from decoder import MLPDecoder
 import torch
 import numpy as np
@@ -387,10 +388,10 @@ class BaseModel(LightningModule):
 
         loss_metrics['kld_loss'] *= loss_metrics['kld_weight']
 
-        loss = sum(loss_metrics.values())
+        loss_metrics['loss'] = sum(loss_metrics.values())
 
         logs = loss_metrics
-        return loss, logs
+        return loss_metrics['loss'], logs
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
@@ -406,6 +407,20 @@ class BaseModel(LightningModule):
 
         return loss
 
+    def validation_epoch_end(self, outputs):
+        # decoder 50 random molecules using fixed random seed
+        if self.current_epoch < 3:
+            pass
+        else:
+            generator = torch.Generator(device = self.full_graph_encoder._dummy_param.device).manual_seed(0)
+            latent_vectors = torch.randn(size = (50, 512), generator = generator, device = self.full_graph_encoder._dummy_param.device)
+            decoder_states = self.decode(latent_representations = latent_vectors)
+            print([Chem.MolToSmiles(decoder_states[i].molecule) for i in range(len(decoder_states))])
+            try:
+                img = Draw.MolsToGridImage([decoder_states[i].molecule for i in range(len(decoder_states))][:], subImgSize=(200,200), maxMols = 1000, molsPerRow=10)
+                self.logger.experiment.add_image('sample_molecules', img, self.current_epoch)
+            except Exception as e:
+                print(e)
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             self.parameters(), lr=self._training_hyperparams["max_lr"]
@@ -544,7 +559,7 @@ class BaseModel(LightningModule):
 
             attachment_point_logprobs = torch.nn.functional.log_softmax(
                 torch.tensor(attachment_point_logits), dim=0
-            ).numpy()
+            )#.numpy()
             picked_att_point_indices = sample_indices_from_logprobs(
                 num_samples, sampling_mode, attachment_point_logprobs
             )
@@ -681,7 +696,7 @@ class BaseModel(LightningModule):
                     torch.cat(
                         [
                             decoder_state_edge_candidate_logits,
-                            torch.tensor([decoder_state_no_edge_logit]),
+                            torch.tensor([decoder_state_no_edge_logit], device = self.full_graph_encoder._dummy_param.device),
                         ]
                     ),
                     dim=0,
@@ -876,7 +891,7 @@ class BaseModel(LightningModule):
                 ),
                 batch_index=batch.batch,
             )
-
+            
             node_type_logits = self.decoder.pick_node_type(
                 input_molecule_representations=batch.latent_representation,
                 graph_representations=graph_representations,
@@ -887,7 +902,7 @@ class BaseModel(LightningModule):
             # back later so that the type lookup indices work out:
             atom_type_logprobs = torch.nn.functional.log_softmax(
                 node_type_logits[:, 1:], dim=1
-            ).numpy()  # Shape [G, NT]
+            )#.numpy()  # Shape [G, NT]
 
             atom_type_pick_results = []
             # Iterate over each of the rows independently, sampling for each input state:
@@ -907,7 +922,7 @@ class BaseModel(LightningModule):
                         this_state_results.append((None, pick_logprob))
                     else:
                         picked_atom_type = self._index_to_node_type_map[
-                            picked_atom_type_idx
+                            picked_atom_type_idx.item()
                         ]
                         this_state_results.append((picked_atom_type, pick_logprob))
                 atom_type_pick_results.append(

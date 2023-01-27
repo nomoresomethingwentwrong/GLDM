@@ -12,7 +12,7 @@ if __name__ == '__main__':
     parser.add_argument('--dist_file', default='/data/ongh0068/guacamol/guacamol_v1_all.smiles')
     parser.add_argument('--output_dir', default=None, help='Output directory')
     parser.add_argument('--suite', default='v2')
-    parser.add_argument('--ckpt_file_path', default = '/data/ongh0068/l1000/2023-01-09_13_46_22.653611/epoch=48-val_loss=3.06.ckpt')
+    parser.add_argument('--ckpt_file_path', default = '/data/ongh0068/2023-01-21_13_30_47.083217sanity/epoch=943-val_loss=4.30.ckpt')
     args = parser.parse_args()
 
     if args.output_dir is None:

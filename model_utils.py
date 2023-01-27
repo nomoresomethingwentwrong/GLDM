@@ -222,7 +222,7 @@ class PropertyRegressionMLP(torch.nn.Module):
         if self._property_stddev is None:
             loss = torch.nn.functional.mse_loss(predictions, labels)
         else:
-            abs_error = torch.nn.functional.l1_loss(predictions, labels)
+            abs_error = torch.nn.functional.l1_loss(predictions.squeeze(), labels)
             normalised_abs_error = abs_error /self._property_stddev
             loss = torch.square(normalised_abs_error) 
         return self._loss_weight_factor * loss
@@ -557,7 +557,7 @@ def get_params(dataset):
                 "input_feature_dim": 1344,
                 "output_size": len(dataset.node_type_index_to_string) + 1,
             },
-            "use_node_type_loss_weights": False,  # DON'T use node type loss weights by default
+            "use_node_type_loss_weights": True,  # DON'T use node type loss weights by default
             "node_type_loss_weights": torch.tensor(get_class_weights(dataset)),
             "no_more_edges_repr": (1, 835),
             "edge_candidate_scorer": {
