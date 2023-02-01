@@ -27,8 +27,9 @@ to_increment_by_num_nodes_in_graph = [
     "candidate_attachment_points",
     # pick edge
     "focus_atoms",
+    # "prior_focus_atoms",
     "candidate_edge_targets",
-    "candidate_edge_type_masks",
+    # "candidate_edge_type_masks",
 ]
 
 
@@ -96,6 +97,7 @@ class MolerDataset(Dataset):
         using_self_loops=False,
         gen_step_drop_probability=0.5,
         edge_repr=EdgeRepresentation.edge_attr,
+        num_samples_debug_mode = None, # only for debugging, will pick first n number of samples deterministically
     ):
         self._processed_file_paths = None
         self._transform = transform
@@ -116,6 +118,10 @@ class MolerDataset(Dataset):
 
         self._gen_step_drop_probability = gen_step_drop_probability
         self.load_metadata()
+
+        ##### NOTE: only for debugging purposes ########
+        self._num_samples_debug_mode = num_samples_debug_mode
+        ##### NOTE: only for debugging purposes ########
 
         # create the directory for the processed data if it doesn't exist
         processed_file_paths_folder = os.path.join(
@@ -594,6 +600,27 @@ class MolerDataset(Dataset):
         file_path = self.processed_file_names[idx]
         with gzip.open(file_path, "rb") as f:
             data = pickle.load(f)
+        if self._num_samples_debug_mode is not None:
+            # NOTE: only for debugging; deterministically pick first n samples
+            # and return them instead of random subsampling
+            unrolled = data.to_data_list()
+            return Batch.from_data_list(
+                unrolled[:self._num_samples_debug_mode],
+                follow_batch=[
+                    "correct_edge_choices",
+                    "correct_edge_types",
+                    "valid_edge_choices",
+                    "valid_attachment_point_choices",
+                    "correct_attachment_point_choice",
+                    "correct_node_type_choices",
+                    "original_graph_x",
+                    "correct_first_node_type_choices",
+                    # pick attachment points
+                    "candidate_attachment_points",
+                    # pick edge
+                    "candidate_edge_targets",
+                ],
+            )
         if self._split == 'train' and self._gen_step_drop_probability > 0:
             unrolled = data.to_data_list()
             selected_idx = np.arange(len(unrolled))[

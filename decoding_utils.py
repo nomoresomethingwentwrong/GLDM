@@ -241,7 +241,6 @@ def batch_decoder_states(
                 single bond => 0
                 double bond => 1
                 triple bond => 2
-                self loop => 3
                 """
                 edge_types += [edge_type_idx] * len(adj_list)
             
@@ -277,7 +276,9 @@ def batch_decoder_states(
                 # pick attachment points
                 'candidate_attachment_points',
                 # pick edge
-                'candidate_edge_targets'
+                # 'candidate_edge_targets',
+                # 'prior_focus_atoms',
+                # 'focus_atoms',
             ]), [i[1] for i in tmp])
     if len(current_batch) > 0:
         yield (Batch.from_data_list([i[0] for i in current_batch], follow_batch = [
@@ -292,5 +293,7 @@ def batch_decoder_states(
             # pick attachment points
             'candidate_attachment_points',
             # pick edge
-            'candidate_edge_targets'
+            # 'candidate_edge_targets',
+            # 'prior_focus_atoms',
+            # 'focus_atoms',
         ]), [i[1] for i in current_batch])
