@@ -9,12 +9,14 @@ import torch.nn.functional as F
 
 distance_truncation = 10
 BIG_NUMBER = 1e7
+SMALL_NUMBER = 1e-7
 
+# def softmax_cross_entropy_with_logits(logits, targets, reduce="none"):
+#     """Pytorch analogue for tf.nn.softmax_cross_entropy_with_logits."""
+#     # https://stackoverflow.com/questions/46218566/pytorch-equivalence-for-softmax-cross-entropy-with-logits
+#     if reduce == "none":
+#         return torch.nn.functional.cross_entropy(logits, targets, reduction = reduce)
 
-def softmax_cross_entropy_with_logits(logits, targets, reduce="none"):
-    """Pytorch analogue for tf.nn.softmax_cross_entropy_with_logits."""
-    if reduce == "none":
-        return -targets * F.log_softmax(logits, -1)
 
 
 class MLPDecoder(torch.nn.Module):
@@ -112,7 +114,7 @@ class MLPDecoder(torch.nn.Module):
 
         no_node_decision_correct = (
             per_node_decision_num_correct_choices == 0.0
-        ).sum()  # Shape [NTP]
+        )  # Shape [NTP, 1]
         per_correct_no_node_decision_neglogprob = -(
             per_node_decision_logprobs[:, -1]
             * torch.squeeze(no_node_decision_correct).float()
@@ -307,22 +309,22 @@ class MLPDecoder(torch.nn.Module):
 
         # Note: per_graph_num_correct_edge_choices does not include the choice of an edge to
         # the stop node, so can be zero.
-        per_graph_num_correct_edge_choices = torch.max(
+        per_graph_num_correct_edge_choices = torch.maximum(
             per_graph_num_correct_edge_choices,
             torch.ones(
                 per_graph_num_correct_edge_choices.shape,
                 device=self._dummy_param.device,
             ),
         )  # Shape: [PG]
-
-        per_edge_candidate_num_correct_choices = per_graph_num_correct_edge_choices[
-            edge_candidate_to_graph_map
-        ]
+        per_edge_candidate_num_correct_choices = torch.index_select(per_graph_num_correct_edge_choices, 0, edge_candidate_to_graph_map)
+        # per_graph_num_correct_edge_choices[
+        #     edge_candidate_to_graph_map
+        # ]
         # Shape: [CE]
         per_correct_edge_neglogprob = -(
             (
                 edge_candidate_logprobs
-                + torch.log(per_edge_candidate_num_correct_choices)
+                + torch.log(per_edge_candidate_num_correct_choices +SMALL_NUMBER)
             )
             * edge_correctness_labels
             / per_edge_candidate_num_correct_choices
@@ -355,11 +357,9 @@ class MLPDecoder(torch.nn.Module):
         masked_edge_type_logits = (
             edge_type_logits_for_correct_edges - scaled_edge_mask
         )  # Shape: [CCE, ET]
-        edge_type_loss = softmax_cross_entropy_with_logits(
-            masked_edge_type_logits,
-            edge_type_onehot_labels.float(),
+        edge_type_loss = torch.nn.functional.cross_entropy(
+            masked_edge_type_logits, edge_type_onehot_labels.float(), reduction = 'none'
         )
-
         # Normalise by the number of edges for which we needed to pick a type:
         # instead of mean, we must use safe divide because the batch can have zero edges
         # requring edge types
@@ -419,14 +419,15 @@ class MLPDecoder(torch.nn.Module):
             )
             * 1.0
         )  # Shape: [CA]
-
         attachment_point_correct_choice_neglogprobs = (
-            -attachment_point_candidate_logprobs[attachment_point_correct_choices]
+            -torch.index_select(attachment_point_candidate_logprobs, 0, attachment_point_correct_choices)
+            # -attachment_point_candidate_logprobs[attachment_point_correct_choices]
         )
+
         # Shape: [AP]
 
         attachment_point_selection_loss = safe_divide_loss(
-            (attachment_point_correct_choice_neglogprobs).sum(),
+            torch.sum(attachment_point_correct_choice_neglogprobs),
             attachment_point_correct_choice_neglogprobs.shape[0],
         )
         return attachment_point_selection_loss

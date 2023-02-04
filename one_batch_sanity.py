@@ -30,7 +30,7 @@ if __name__ == "__main__":
         raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split1,
-        num_samples_debug_mode = 32
+        num_samples_debug_mode = 500
     )
     # train_dataset2 = MolerDataset(
     #     root="/data/ongh0068",

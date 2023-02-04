@@ -663,5 +663,6 @@ def get_params(dataset):
             "three_phase": True,
         },
         "use_oclr_scheduler": False,  # doesn't use oclr by default
-        "decode_on_validation_end": True
+        "decode_on_validation_end": True,
+        "using_cyclical_anneal": False
     }

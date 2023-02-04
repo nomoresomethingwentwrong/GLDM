@@ -8,7 +8,7 @@ from datetime import datetime
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
-
+import sys
 if __name__ == "__main__":
 
     batch_size = 1
@@ -123,6 +123,12 @@ if __name__ == "__main__":
     )
 
     params = get_params(dataset=train_dataset1)  # train_dataset)
+    ###################################################
+    layer_type = sys.argv[1]  # change this
+    params['full_graph_encoder']['layer_type'] = layer_type
+    params['partial_graph_encoder']['layer_type'] = layer_type
+    # params['using_cyclical_anneal'] = True
+    ###################################################
     model = BaseModel(
         params,
         valid_dataset,
@@ -148,7 +154,7 @@ if __name__ == "__main__":
     trainer = Trainer(
         accelerator="gpu",
         max_epochs=30,
-        devices=[1],
+        devices=[2],
         callbacks=[checkpoint_callback, lr_monitor, early_stopping],
         logger=tensorboard_logger,
         gradient_clip_val=1.0,

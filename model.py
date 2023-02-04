@@ -44,6 +44,7 @@ class BaseModel(LightningModule):
         self._batch_size = batch_size
         self._use_oclr_scheduler = params["use_oclr_scheduler"]
         self._decode_on_validation_end = params['decode_on_validation_end']
+        self._using_cyclical_anneal = params['using_cyclical_anneal']
         # Graph encoders
         self._full_graph_encoder = GraphEncoder(**self._params["full_graph_encoder"])
         self._partial_graph_encoder = PartialGraphEncoder(
@@ -369,12 +370,14 @@ class BaseModel(LightningModule):
         #     moler_output.q, moler_output.p
         # ).mean()
         # kld weight will start from 0 and increase to the original amount.
+
+        annealing_factor = self.trainer.global_step % (self._num_train_batches // 4) if self._using_cyclical_anneal else self.trainer.global_step
+
         loss_metrics['kld_weight'] = (
             (  # cyclical anealing where each cycle will span 1/4 of the training epoch
                 1.0
                 - self._kl_divergence_annealing_beta
-                # ** (self.trainer.global_step % (self._num_train_batches // 4))
-                **self.trainer.global_step
+                ** annealing_factor
             )
             * self._kl_divergence_weight
         )
