@@ -1,13 +1,14 @@
 import sys
 import itertools
 from pytorch_lightning import LightningModule
-from model_utils import GenericMLP, MoLeROutput
+from model_utils import GenericMLP, MoLeROutput, PropertyRegressionMLP
 from encoder import GraphEncoder, PartialGraphEncoder
-
+from rdkit.Chem import Draw
+from rdkit import Chem
 from decoder import MLPDecoder
 import torch
 import numpy as np
-from utils import BIG_NUMBER
+from utils import BIG_NUMBER, pprint_pyg_obj
 from decoding_utils import (
     construct_decoder_states,
     sample_indices_from_logprobs,
@@ -41,6 +42,9 @@ class BaseModel(LightningModule):
         self._params = params
         self._num_train_batches = num_train_batches
         self._batch_size = batch_size
+        self._use_oclr_scheduler = params["use_oclr_scheduler"]
+        self._decode_on_validation_end = params['decode_on_validation_end']
+        self._using_cyclical_anneal = params['using_cyclical_anneal']
         # Graph encoders
         self._full_graph_encoder = GraphEncoder(**self._params["full_graph_encoder"])
         self._partial_graph_encoder = PartialGraphEncoder(
@@ -49,6 +53,22 @@ class BaseModel(LightningModule):
 
         # Replace this with any other latent space mapping techniques eg diffusion
         self._mean_log_var_mlp = GenericMLP(**self._params["mean_log_var_mlp"])
+
+        # MLP for regression task on graph properties
+        self._include_property_regressors = "graph_properties" in self._params
+        if self._include_property_regressors:
+            self._graph_property_pred_loss_weight = self._params[
+                "graph_property_pred_loss_weight"
+            ]
+            self._property_predictors = torch.nn.ModuleDict()
+            for prop_name, prop_params in self._params["graph_properties"].items():
+                prop_stddev = dataset.metadata.get(f"{prop_name}_stddev")
+                if not (prop_params.get("normalise_loss", True)):
+                    prop_stddev = None
+                self._property_predictors[prop_name] = PropertyRegressionMLP(
+                    **prop_params["mlp"],
+                    property_stddev=prop_stddev,
+                )
 
         # MLP decoders
         self._decoder = MLPDecoder(self._params["decoder"])
@@ -176,28 +196,28 @@ class BaseModel(LightningModule):
 
     def sample_from_latent_repr(self, latent_repr):
         mean_and_log_var = self.mean_log_var_mlp(latent_repr)
-        mean_and_log_var = torch.clamp(mean_and_log_var, min=-10, max=10)
+        # mean_and_log_var = torch.clamp(mean_and_log_var, min=-10, max=10)
         # perturb latent repr
         mu = mean_and_log_var[:, : self.latent_dim]  # Shape: [V, MD]
         log_var = mean_and_log_var[:, self.latent_dim :]  # Shape: [V, MD]
 
         # result_representations: shape [num_partial_graphs, latent_repr_dim]
-        # z = self.reparametrize(mu, log_var)
-        p, q, z = self.reparametrize(mu, log_var)
+        z = self.reparametrize(mu, log_var)
+        # p, q, z = self.reparametrize(mu, log_var)
 
-        # return mu, log_var, z
-        return p, q, z
+        return mu, log_var, z
+        # return p, q, z
 
     def reparametrize(self, mu, log_var):
         """Samples a different noise vector for each partial graph.
         TODO: look into the other sampling strategies."""
         std = torch.exp(0.5 * log_var)
-        # eps = torch.randn_like(std)
-        # return eps * std + mu
-        p = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(std))
-        q = torch.distributions.Normal(mu, std)
-        z = q.rsample()
-        return p, q, z
+        eps = torch.randn_like(std)
+        return eps * std + mu
+        # p = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(std))
+        # q = torch.distributions.Normal(mu, std)
+        # z = q.rsample()
+        # return p, q, z
 
     def forward(self, batch):
         moler_output = self._run_step(batch)
@@ -234,7 +254,7 @@ class BaseModel(LightningModule):
         # mu, log_var, latent_representation = self.sample_from_latent_repr(
         #     input_molecule_representations
         # )
-        p, q, latent_representation = self.sample_from_latent_repr(
+        mu, log_var, latent_representation = self.sample_from_latent_repr(
             input_molecule_representations
         )
 
@@ -267,10 +287,11 @@ class BaseModel(LightningModule):
             edge_candidate_logits=edge_candidate_logits,
             edge_type_logits=edge_type_logits,
             attachment_point_selection_logits=attachment_point_selection_logits,
-            # mu=mu,
-            # log_var=log_var,
-            p=p,
-            q=q,
+            mu=mu,
+            log_var=log_var,
+            # p=p,
+            # q=q,
+            latent_representation=latent_representation,
         )
 
     def compute_loss(self, moler_output, batch):
@@ -313,47 +334,60 @@ class BaseModel(LightningModule):
 
         return loss
 
+    def compute_property_prediction_loss(self, latent_representation, batch):
+        """TODO: Since graph property regression is more of a auxillary loss than anything, this function will be
+        decoupled in the future into `compute_properties` and `compute_property_prediction_loss` so that
+        it can be passed into the `_run_step` function and returned in MolerOutput."""
+        property_prediction_losses = {}
+        for prop_name, property_predictor in self._property_predictors.items():
+            predictions = property_predictor(latent_representation)
+            property_prediction_losses[prop_name] = property_predictor.compute_loss(
+                predictions=predictions, labels=batch[prop_name]
+            )
+        # sum up all the property prediction losses
+        return sum([loss for loss in property_prediction_losses.values()])
+
     def step(self, batch):
         moler_output = self._run_step(batch)
 
-        decoder_loss = self.compute_loss(moler_output=moler_output, batch=batch)
+        loss_metrics = {}
+        loss_metrics['decoder_loss'] = self.compute_loss(moler_output=moler_output, batch=batch)
+        if self._include_property_regressors:
+            loss_metrics['property_prediction_loss'] = (
+                self._graph_property_pred_loss_weight
+                * self.compute_property_prediction_loss(
+                    latent_representation=moler_output.latent_representation,
+                    batch=batch,
+                )
+            )
         # print("log_var", torch.max(moler_output.log_var))
-        # kld_loss = torch.mean(
-        #     -0.5
-        #     * torch.sum(
-        #         1
-        #         + moler_output.log_var
-        #         - moler_output.mu**2
-        #         - torch.exp(moler_output.log_var),
-        #         dim=1,
-        #     ),
-        #     dim=0,
-        # )
-        kld_loss = torch.distributions.kl_divergence(
-            moler_output.q, moler_output.p
-        ).mean()
-        # print("kld_loss", kld_loss)
+        kld_summand = torch.square(moler_output.mu)
+        + torch.exp(moler_output.log_var)
+        - moler_output.log_var
+        - 1
+        loss_metrics['kld_loss'] = torch.mean( kld_summand)/2.0
+        # loss_metrics['kld_loss'] = torch.distributions.kl_divergence(
+        #     moler_output.q, moler_output.p
+        # ).mean()
         # kld weight will start from 0 and increase to the original amount.
-        kld_weight = (
+
+        annealing_factor = self.trainer.global_step % (self._num_train_batches // 4) if self._using_cyclical_anneal else self.trainer.global_step
+
+        loss_metrics['kld_weight'] = (
             (  # cyclical anealing where each cycle will span 1/4 of the training epoch
                 1.0
                 - self._kl_divergence_annealing_beta
-                ** (self.trainer.global_step % (self._num_train_batches // 4))
+                ** annealing_factor
             )
             * self._kl_divergence_weight
         )
 
-        kld_loss *= kld_weight
+        loss_metrics['kld_loss'] *= loss_metrics['kld_weight']
 
-        loss = kld_loss + decoder_loss
+        loss_metrics['loss'] = sum(loss_metrics.values())
 
-        logs = {
-            "kld_beta_loss_weight": kld_weight,
-            "decoder_loss": decoder_loss,
-            "kl": kld_loss,
-            "loss": loss,
-        }
-        return loss, logs
+        logs = loss_metrics
+        return loss_metrics['loss'], logs
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
@@ -369,6 +403,21 @@ class BaseModel(LightningModule):
 
         return loss
 
+    def validation_epoch_end(self, outputs):
+        # decoder 50 random molecules using fixed random seed
+        if self._decode_on_validation_end:
+            if self.current_epoch < 3:
+                pass
+            else:
+                generator = torch.Generator(device = self.full_graph_encoder._dummy_param.device).manual_seed(0)
+                latent_vectors = torch.randn(size = (50, 512), generator = generator, device = self.full_graph_encoder._dummy_param.device)
+                decoder_states = self.decode(latent_representations = latent_vectors)
+                print([Chem.MolToSmiles(decoder_states[i].molecule) for i in range(len(decoder_states))])
+                try:
+                    img = Draw.MolsToGridImage([decoder_states[i].molecule for i in range(len(decoder_states))][:], subImgSize=(200,200), maxMols = 1000, molsPerRow=10)
+                    self.logger.experiment.add_image('sample_molecules', img, self.current_epoch)
+                except Exception as e:
+                    print(e)
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             self.parameters(), lr=self._training_hyperparams["max_lr"]
@@ -379,30 +428,33 @@ class BaseModel(LightningModule):
         #     lr=self._training_hyperparams["max_lr"],
         #     betas=(0.9, 0.999),
         # )
-        lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            optimizer=optimizer,
-            max_lr=self._training_hyperparams["max_lr"],
-            div_factor=self._training_hyperparams["div_factor"],
-            three_phase=self._training_hyperparams["three_phase"],
-            epochs=self.trainer.max_epochs,
-            # number of times step() is called by the scheduler per epoch
-            # take the number of batches // frequency of calling the scheduler
-            steps_per_epoch=self._num_train_batches // self.trainer.max_epochs,
-        )
+        if self._use_oclr_scheduler:
+            lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer=optimizer,
+                max_lr=self._training_hyperparams["max_lr"],
+                div_factor=self._training_hyperparams["div_factor"],
+                three_phase=self._training_hyperparams["three_phase"],
+                epochs=self.trainer.max_epochs,
+                # number of times step() is called by the scheduler per epoch
+                # take the number of batches // frequency of calling the scheduler
+                steps_per_epoch=self._num_train_batches // self.trainer.max_epochs,
+            )
 
-        lr_scheduler_params = {}
-        lr_scheduler_params["scheduler"] = lr_scheduler
+            lr_scheduler_params = {}
+            lr_scheduler_params["scheduler"] = lr_scheduler
 
-        lr_scheduler_params["interval"] = "step"
-        frequency_of_lr_scheduler_step = self.trainer.max_epochs
-        lr_scheduler_params[
-            "frequency"
-        ] = frequency_of_lr_scheduler_step  # number of batches to wait before calling lr_scheduler.step()
+            lr_scheduler_params["interval"] = "step"
+            frequency_of_lr_scheduler_step = self.trainer.max_epochs
+            lr_scheduler_params[
+                "frequency"
+            ] = frequency_of_lr_scheduler_step  # number of batches to wait before calling lr_scheduler.step()
 
-        optimizer_dict = {}
-        optimizer_dict["optimizer"] = optimizer
-        optimizer_dict["lr_scheduler"] = lr_scheduler_params
-        return optimizer_dict
+            optimizer_dict = {}
+            optimizer_dict["optimizer"] = optimizer
+            optimizer_dict["lr_scheduler"] = lr_scheduler_params
+            return optimizer_dict
+        else:
+            return optimizer
 
     def _decoder_pick_first_atom_types(
         self,
@@ -421,8 +473,8 @@ class BaseModel(LightningModule):
             )  # Shape [G, NT + 1]
 
             first_atom_type_logprobs = torch.nn.functional.log_softmax(
-                first_node_type_logits[:, 1:],
-                dim=-1,  # because index 0 corresponds to UNK
+                first_node_type_logits[:, 1:], # because index 0 corresponds to UNK
+                dim=1,  
             )  # Shape [G, NT]
 
             first_atom_type_pick_results = []
@@ -504,7 +556,7 @@ class BaseModel(LightningModule):
 
             attachment_point_logprobs = torch.nn.functional.log_softmax(
                 torch.tensor(attachment_point_logits), dim=0
-            ).numpy()
+            )#.numpy()
             picked_att_point_indices = sample_indices_from_logprobs(
                 num_samples, sampling_mode, attachment_point_logprobs
             )
@@ -549,7 +601,8 @@ class BaseModel(LightningModule):
             motif_vocabulary=self._motif_vocabulary,
             add_state_to_batch_callback=add_state_to_attachment_point_choice_batch,
         ):
-
+            # print('_decoder_pick_attachment_points')
+            # pprint_pyg_obj(batch, True)
             with torch.no_grad():
                 (
                     pick_results_for_batch,
@@ -574,6 +627,7 @@ class BaseModel(LightningModule):
         store_generation_traces=False,
     ):
         with torch.no_grad():
+            # print('batch.focus_atoms,', batch.focus_atoms)
             graph_representations, node_representations = self._partial_graph_encoder(
                 node_features=batch.x,
                 partial_graph_node_categorical_features=batch.node_categorical_features,
@@ -641,7 +695,7 @@ class BaseModel(LightningModule):
                     torch.cat(
                         [
                             decoder_state_edge_candidate_logits,
-                            torch.tensor([decoder_state_no_edge_logit]),
+                            torch.tensor([decoder_state_no_edge_logit], device = self.full_graph_encoder._dummy_param.device),
                         ]
                     ),
                     dim=0,
@@ -783,6 +837,10 @@ class BaseModel(LightningModule):
             motif_vocabulary=self._motif_vocabulary,
             add_state_to_batch_callback=add_state_to_edge_batch,
         )
+        # print('_decoder_pick_new_bond_types')
+        # for b, d in batch_generator:
+        #     pprint_pyg_obj(b, verbose = True)
+        # pprint_pyg_obj(next(iter(batch_generator)))
 
         picked_edges_generator = (
             self._pick_edges_for_batch(
@@ -819,7 +877,8 @@ class BaseModel(LightningModule):
     def _pick_new_atom_types_for_batch(
         self, batch, num_samples=1, sampling_mode="greedy"
     ):
-
+        # print('batch.prior_focus_atoms')
+        # pprint_pyg_obj(batch, True)
         with torch.no_grad():
             graph_representations, _ = self.partial_graph_encoder(
                 partial_graph_node_categorical_features=batch.node_categorical_features,
@@ -836,7 +895,7 @@ class BaseModel(LightningModule):
                 ),
                 batch_index=batch.batch,
             )
-
+            
             node_type_logits = self.decoder.pick_node_type(
                 input_molecule_representations=batch.latent_representation,
                 graph_representations=graph_representations,
@@ -847,7 +906,7 @@ class BaseModel(LightningModule):
             # back later so that the type lookup indices work out:
             atom_type_logprobs = torch.nn.functional.log_softmax(
                 node_type_logits[:, 1:], dim=1
-            ).numpy()  # Shape [G, NT]
+            )#.numpy()  # Shape [G, NT]
 
             atom_type_pick_results = []
             # Iterate over each of the rows independently, sampling for each input state:
@@ -867,7 +926,7 @@ class BaseModel(LightningModule):
                         this_state_results.append((None, pick_logprob))
                     else:
                         picked_atom_type = self._index_to_node_type_map[
-                            picked_atom_type_idx
+                            picked_atom_type_idx.item()
                         ]
                         this_state_results.append((picked_atom_type, pick_logprob))
                 atom_type_pick_results.append(
@@ -1009,12 +1068,13 @@ class BaseModel(LightningModule):
                             require_attachment_point_states.append(new_decoder_state)
                         else:
                             require_bond_states.append(new_decoder_state)
-
+            
             if self.uses_motifs:
                 # Step 2': For states that require picking an attachment point, pick one:
                 require_attachment_point_states = restrict_to_beam_size_per_mol(
                     require_attachment_point_states, beam_size
                 )
+                
                 (
                     attachment_pick_results,
                     attachment_pick_logits,
@@ -1022,7 +1082,7 @@ class BaseModel(LightningModule):
                     decoder_states=require_attachment_point_states,
                     sampling_mode=sampling_mode,
                 )
-
+                # print('attachment_pick_results, attachment_pick_logits', attachment_pick_results, attachment_pick_logits)
                 for (
                     decoder_state,
                     attachment_point_picks,
@@ -1037,13 +1097,14 @@ class BaseModel(LightningModule):
                         attachment_point_logprob,
                     ) in attachment_point_picks:
                         attachment_point_choice_info = None
+
                         if store_generation_traces:
                             attachment_point_choice_info = MoleculeGenerationAttachmentPointChoiceInfo(
                                 partial_molecule_adjacency_lists=decoder_state.adjacency_lists,
                                 motif_nodes=decoder_state.atoms_to_mark_as_visited,
                                 candidate_attachment_points=decoder_state.candidate_attachment_points,
                                 candidate_idx_to_prob=torch.nn.functional.log_softmax(
-                                    attachment_point_logits, dim=0
+                                    attachment_point_logits, dim=-1
                                 ),
                                 correct_attachment_point_idx=None,
                             )

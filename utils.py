@@ -2,12 +2,15 @@ import torch
 from torch_geometric.utils import scatter
 
 
-def pprint_pyg_obj(batch):
+def pprint_pyg_obj(batch, verbose = False):
     """For printing out the pytorch geometric attributes in a readable way."""
     for key in vars(batch)["_store"].keys():
         if key.startswith("_"):
             continue
-        print(f"{key}: {batch[key].shape}")
+        if verbose:
+            print(f"{key}: {batch[key]}")
+        else:
+            print(f"{key}: {batch[key].shape}")
 
 
 def safe_divide_loss(loss, num_choices):

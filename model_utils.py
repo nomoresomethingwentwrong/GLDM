@@ -28,8 +28,11 @@ class MoLeROutput:
     edge_candidate_logits: torch.Tensor
     edge_type_logits: torch.Tensor
     attachment_point_selection_logits: torch.Tensor
-    p: torch.Tensor
-    q: torch.Tensor
+    # p: torch.Tensor
+    # q: torch.Tensor
+    mu: torch.Tensor
+    log_var:torch.Tensor
+    latent_representation: torch.Tensor
 
 
 class LayerType(Enum):
@@ -93,6 +96,7 @@ class GenericGraphEncoder(torch.nn.Module):
                 * (num_layers + 1)
                 // 2,
                 weighting_fun="sigmoid",
+                transformation_mlp_result_upper_bound = torch.tensor(5)
             )
         self._use_intermediate_gnn_results = use_intermediate_gnn_results
 
@@ -125,7 +129,9 @@ class GenericGraphEncoder(torch.nn.Module):
                 gnn_results += [
                     layer(gnn_results[-1], edge_index.long(), edge_type_or_attr)
                 ]
-        elif self._layer_type == LayerType.GCNConv: # GCNConv does not require edge features or edge attrs
+        elif (
+            self._layer_type == LayerType.GCNConv
+        ):  # GCNConv does not require edge features or edge attrs
             gnn_results += [self._first_layer(node_features, edge_index.long())]
 
             for layer in self._encoder_layers:
@@ -154,37 +160,76 @@ class GenericMLP(torch.nn.Module):
         self,
         input_feature_dim,
         output_size,
-        hidden_layer_feature_dim=256,
-        num_hidden_layers=1,
+        hidden_layer_dims=[256, 256],
         activation_layer_type="leaky_relu",
-        dropout_prob=0.1,
+        dropout_prob=0.0,
+        use_bias = True
     ):
         super(GenericMLP, self).__init__()
         if activation_layer_type == "leaky_relu":
-            self._first_layer = Linear(input_feature_dim, hidden_layer_feature_dim)
-            self._hidden_layers = torch.nn.ModuleList(
-                [
-                    LeakyReLU(),
-                    Dropout(p=dropout_prob),
-                    Linear(hidden_layer_feature_dim, hidden_layer_feature_dim),
-                ]
-                * num_hidden_layers
-            )
-            self._output_layer = torch.nn.Sequential(
-                LeakyReLU(),
-                Dropout(p=dropout_prob),
-                Linear(hidden_layer_feature_dim, output_size),
-            )
+            hidden_layer_dims = [
+                input_feature_dim
+            ] + hidden_layer_dims  # first layer + hidden layers
+            self._hidden_layers = torch.nn.ModuleList()
+            for i in range(len(hidden_layer_dims) - 1):
+                self._hidden_layers.append(
+                    Linear(hidden_layer_dims[i], hidden_layer_dims[i + 1], bias = use_bias)
+                )
+                self._hidden_layers.append(LeakyReLU())
+                if dropout_prob > 0.0:
+                    self._hidden_layers.append(Dropout(p=dropout_prob))
+            self._final_layer = Linear(hidden_layer_dims[-1], output_size, bias = use_bias)
         else:
             raise NotImplementedError
 
     def forward(self, x):
-        x = self._first_layer(x)
         for layer in self._hidden_layers:
             x = layer(x)
-        x = self._output_layer(x)
+        x = self._final_layer(x)
         return x
 
+
+class PropertyRegressionMLP(torch.nn.Module):
+    def __init__(
+        self,
+        input_feature_dim,
+        output_size,
+        property_stddev=None,  # for ensuring the properties are all on the same scale
+        hidden_layer_dims=[256, 256],
+        activation_layer_type="leaky_relu",
+        dropout_prob=0.2,
+        loss_weight_factor=1.0,
+    ):
+        super(PropertyRegressionMLP, self).__init__()
+        self._property_stddev = property_stddev
+        self._loss_weight_factor = loss_weight_factor
+        self._mlp = GenericMLP(
+            input_feature_dim = input_feature_dim,
+            output_size = output_size,
+            hidden_layer_dims=hidden_layer_dims,
+            activation_layer_type=activation_layer_type,
+            dropout_prob=dropout_prob,
+        )
+    def forward(
+        self,
+        latent_representation,
+    ):
+        return self._mlp(latent_representation)
+
+
+    def compute_loss(
+        self,
+        predictions,
+        labels, 
+    ):
+        """Return L2 loss and scale it by std dev"""
+        if self._property_stddev is None:
+            loss = torch.nn.functional.mse_loss(predictions, labels)
+        else:
+            abs_error = torch.nn.functional.l1_loss(predictions.squeeze(), labels)
+            normalised_abs_error = abs_error /self._property_stddev
+            loss = torch.square(normalised_abs_error) 
+        return self._loss_weight_factor * loss
 
 class WeightedSumGraphRepresentation(torch.nn.Module):
     def __init__(
@@ -196,13 +241,13 @@ class WeightedSumGraphRepresentation(torch.nn.Module):
         # scoring_mlp_layers = [128],
         scoring_mlp_activation_fun="leaky_relu",
         # scoring_mlp_use_biases: bool = False,
-        scoring_mlp_dropout_rate=0.1,
+        scoring_mlp_dropout_rate=0.0,
         # transformation_mlp_layers = [128],
         transformation_mlp_activation_fun="leaky_relu",
         # transformation_mlp_use_biases = False,
-        transformation_mlp_dropout_rate=0.1,
-        #         transformation_mlp_result_lower_bound = None,
-        #         transformation_mlp_result_upper_bound = None,
+        transformation_mlp_dropout_rate=0.0,
+        transformation_mlp_result_lower_bound = None,
+        transformation_mlp_result_upper_bound = None,
         #         **kwargs,
     ):
         super(WeightedSumGraphRepresentation, self).__init__()
@@ -211,19 +256,19 @@ class WeightedSumGraphRepresentation(torch.nn.Module):
         self._weighting_fun = weighting_fun.lower()
         assert self._weighting_fun in ["softmax", "sigmoid"]
         self._transformation_mlp_activation_fun = LeakyReLU()
+        self._transformation_mlp_result_upper_bound = transformation_mlp_result_upper_bound
+        self._transformation_mlp_result_lower_bound = transformation_mlp_result_lower_bound
         self._scoring_mlp = GenericMLP(
             input_feature_dim=input_feature_dim,
             output_size=self._num_heads,  # one score for each head
-            hidden_layer_feature_dim=256,
-            num_hidden_layers=1,
+            hidden_layer_dims=[128, 128],
             activation_layer_type=scoring_mlp_activation_fun,
             dropout_prob=scoring_mlp_dropout_rate,
         )
         self._transformation_mlp = GenericMLP(
             input_feature_dim=input_feature_dim,
             output_size=self._graph_representation_size,  # one score for each head
-            hidden_layer_feature_dim=256,
-            num_hidden_layers=1,
+            hidden_layer_dims=[128, 128],
             activation_layer_type=transformation_mlp_activation_fun,
             dropout_prob=transformation_mlp_dropout_rate,
         )
@@ -254,7 +299,10 @@ class WeightedSumGraphRepresentation(torch.nn.Module):
             self._transformation_mlp(x)
         )
         # Shape [V, graph representation dimension]
-
+        if self._transformation_mlp_result_lower_bound is not None:
+            node_reprs = torch.max(input = node_reprs, other = self._transformation_mlp_result_lower_bound)
+        if self._transformation_mlp_result_upper_bound is not None:
+            node_reprs = torch.min(input = node_reprs, other = self._transformation_mlp_result_upper_bound)
         node_reprs = node_reprs.view(
             -1, self._num_heads, self._graph_representation_size // self._num_heads
         )
@@ -324,7 +372,7 @@ def get_encoder_layers(
             num_relations=num_relations,
         )
 
-    elif LayerType[layer_type]  == LayerType.RGCNConv:
+    elif LayerType[layer_type] == LayerType.RGCNConv:
         first_layer = RGCNConv(
             in_channels=input_feature_dim,
             out_channels=hidden_layer_feature_dim,
@@ -337,7 +385,7 @@ def get_encoder_layers(
             num_relations=num_relations,
         )
 
-    elif LayerType[layer_type]  == LayerType.GATConv:
+    elif LayerType[layer_type] == LayerType.GATConv:
         first_layer = GATConv(
             in_channels=input_feature_dim,
             out_channels=hidden_layer_feature_dim,
@@ -348,7 +396,7 @@ def get_encoder_layers(
             hidden_layer_feature_dim=hidden_layer_feature_dim,
         )
 
-    elif LayerType[layer_type]  == LayerType.GCNConv:
+    elif LayerType[layer_type] == LayerType.GCNConv:
         first_layer = GCNConv(
             in_channels=input_feature_dim,
             out_channels=hidden_layer_feature_dim,
@@ -502,41 +550,119 @@ def get_params(dataset):
             "input_feature_dim": dataset[0].x.shape[-1],
             "atom_or_motif_vocab_size": len(dataset.node_type_index_to_string),
             "aggr_layer_type": "MoLeRAggregation",
-            "total_num_moler_aggr_heads": 32, 
-            "layer_type": "FiLMConv"
+            "total_num_moler_aggr_heads": 32,
+            "layer_type": "FiLMConv",
         },
         "partial_graph_encoder": {
             "input_feature_dim": dataset[0].x.shape[-1],
             "atom_or_motif_vocab_size": len(dataset.node_type_index_to_string),
             "aggr_layer_type": "MoLeRAggregation",
-            "total_num_moler_aggr_heads": 16, 
-            "layer_type": "FiLMConv"
+            "total_num_moler_aggr_heads": 16,
+            "layer_type": "FiLMConv",
         },
-        "mean_log_var_mlp": {"input_feature_dim": 832, "output_size": 1024},
+        "mean_log_var_mlp": {"input_feature_dim": 832, "output_size": 1024, "hidden_layer_dims":[], "use_bias":False},
         "decoder": {
             "node_type_selector": {
                 "input_feature_dim": 1344,
                 "output_size": len(dataset.node_type_index_to_string) + 1,
             },
-            "use_node_type_loss_weights": False,  # DON'T use node type loss weights by default
+            "use_node_type_loss_weights": True,  # DON'T use node type loss weights by default
             "node_type_loss_weights": torch.tensor(get_class_weights(dataset)),
             "no_more_edges_repr": (1, 835),
-            "edge_candidate_scorer": {"input_feature_dim": 3011, "output_size": 1},
-            "edge_type_selector": {"input_feature_dim": 3011, "output_size": 3},
-            "attachment_point_selector": {"input_feature_dim": 2176, "output_size": 1},
+            "edge_candidate_scorer": {
+                "input_feature_dim": 3011,
+                "output_size": 1,
+                "hidden_layer_dims": [128, 64, 32],
+                "dropout_prob": 0.0,
+            },
+            "edge_type_selector": {
+                "input_feature_dim": 3011,
+                "output_size": 3,
+                "hidden_layer_dims": [128, 64, 32],
+                "dropout_prob": 0.0,
+            },
+            "attachment_point_selector": {
+                "input_feature_dim": 2176,
+                "output_size": 1,
+                "hidden_layer_dims": [128, 64, 32],
+                "dropout_prob": 0.0,
+            },
             "first_node_type_selector": {
                 "input_feature_dim": 512,
                 "output_size": len(dataset.node_type_index_to_string),
+                "hidden_layer_dims": [256, 256],
+                "dropout_prob": 0.0,
             },
         },
+        "graph_properties": {
+            "sa_score": {
+                "type": "regression",
+                "normalise_loss": True, # normalise loss by standard deviation
+                "mlp": {
+                    "input_feature_dim": 512,
+                    "output_size": 1,
+                    "hidden_layer_dims": [64, 32],
+                    "dropout_prob": 0.0,
+                    "loss_weight_factor": 0.33,
+                }
+            },
+            "clogp": {
+                "type": "regression",
+                "normalise_loss": True, # normalise loss by standard deviation
+                "mlp": {
+                    "input_feature_dim": 512,
+                    "output_size": 1,
+                    "hidden_layer_dims": [64, 32],
+                    "dropout_prob": 0.0,
+                    "loss_weight_factor": 0.33,
+                }
+            },
+            "mol_weight": {
+                "type": "regression",
+                "normalise_loss": True, # normalise loss by standard deviation
+                "mlp": {
+                    "input_feature_dim": 512,
+                    "output_size": 1,
+                    "hidden_layer_dims": [64, 32],
+                    "dropout_prob": 0.0,
+                    "loss_weight_factor": 0.33,
+                }
+            },
+            # "qed": {
+                # "type": "regression",
+                # "normalise_loss": True, # normalise loss by standard deviation
+                # "loss_weight_factor": 0.33,
+                # "mlp": {
+                #     "input_feature_dim": 512,
+                #     "output_size": 1,
+                #     "hidden_layer_dims": [64, 32],
+                #     "dropout_prob": 0.0,
+                # }
+            # },
+            # "bertz": {
+                # "type": "regression",
+                # "normalise_loss": True, # normalise loss by standard deviation
+                # "loss_weight_factor": 0.33,
+                # "mlp": {
+                #     "input_feature_dim": 512,
+                #     "output_size": 1,
+                #     "hidden_layer_dims": [64, 32],
+                #     "dropout_prob": 0.0,
+                # }
+            # },
+        },
+        "graph_property_pred_loss_weight": 0.1, # loss weight in the overall loss term is 0.1
         "latent_sample_strategy": "per_graph",
         "latent_repr_dim": 512,
         "latent_repr_size": 512,
-        "kl_divergence_weight": 0.5,
+        "kl_divergence_weight": 0.02,
         "kl_divergence_annealing_beta": 0.999,
         "training_hyperparams": {
-            "max_lr": 5e-3,
+            "max_lr": 1e-4,
             "div_factor": 10,
             "three_phase": True,
         },
+        "use_oclr_scheduler": False,  # doesn't use oclr by default
+        "decode_on_validation_end": True,
+        "using_cyclical_anneal": False
     }

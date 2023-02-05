@@ -30,6 +30,7 @@ if __name__ == "__main__":
         raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split1,
+        num_samples_debug_mode = 500
     )
     # train_dataset2 = MolerDataset(
     #     root="/data/ongh0068",
@@ -123,6 +124,12 @@ if __name__ == "__main__":
     # )
 
     params = get_params(dataset=train_dataset1)  # train_dataset)
+    params['decode_on_validation_end'] = False
+    params['training_hyperparams']['max_lr'] = 1e-4
+    params['full_graph_encoder']['aggr_layer_type'] = 'MoLeRAggregation'
+    params['partial_graph_encoder']['aggr_layer_type'] = 'MoLeRAggregation'
+
+
     model = BaseModel(
         params,
         train_dataset1,
@@ -134,24 +141,24 @@ if __name__ == "__main__":
     now = str(datetime.now()).replace(" ", "_").replace(":", "_")
 
     # Callbacks
-    lr_monitor = LearningRateMonitor(logging_interval="step")
-    tensorboard_logger = TensorBoardLogger(save_dir=f"../{now}", name=f"logs_{now}")
+    # lr_monitor = LearningRateMonitor(logging_interval="step")
+    tensorboard_logger = TensorBoardLogger(save_dir=f"../{now+'sanity'}", name=f"logs_{now}")
     # early_stopping = EarlyStopping(monitor="val_loss", patience=3)
-    checkpoint_callback = ModelCheckpoint(
-        save_top_k=1,
-        monitor="val_loss",
-        dirpath=f"../{now+'sanity'}",
-        mode="min",
-        filename="{epoch:02d}-{val_loss:.2f}",
-    )
+    # checkpoint_callback = ModelCheckpoint(
+    #     save_top_k=1,
+    #     monitor="val_loss",
+    #     dirpath=f"../{now+'sanity'}",
+    #     mode="min",
+    #     filename="{epoch:02d}-{val_loss:.2f}",
+    # )
 
     trainer = Trainer(
         accelerator="gpu",
         max_epochs=1000,
-        devices=[0],
-        callbacks=[checkpoint_callback, lr_monitor],
+        devices=[2],
+        # callbacks=[checkpoint_callback, lr_monitor],
         logger=tensorboard_logger,
-        gradient_clip_val=1.0,
+        # gradient_clip_val=1.0,
         overfit_batches=1
         # detect_anomaly=True,
         # track_grad_norm=2,

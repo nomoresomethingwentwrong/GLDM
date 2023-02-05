@@ -174,7 +174,8 @@ def sample_indices_from_logprobs(
 
     if sampling_mode == 'greedy':
         # Note that this will return the top num_samples indices, but not in order:
-        picked_indices = np.argpartition(logprobs, -num_samples)[-num_samples:]
+        # picked_indices = torch.topk(logprobs, num_samples)[1].long()
+        picked_indices = np.argpartition(logprobs.cpu(), -num_samples)[-num_samples:]
     # elif sampling_mode == DecoderSamplingMode.SAMPLING:
     #     p = np.exp(logprobs)  # Convert to probabilities
     #     # We can only sample values with non-zero probabilities
@@ -194,10 +195,11 @@ def sample_indices_from_logprobs(
 
 
 def _to_tensor_moler(decoder_state_features, ignore = []):
+    device = decoder_state_features['latent_representation'].device
     for k, v in decoder_state_features.items():
         if k in ignore:
             continue
-        decoder_state_features[k] = torch.tensor(decoder_state_features[k])
+        decoder_state_features[k] = torch.tensor(decoder_state_features[k], device = device)
     return decoder_state_features
 
 
@@ -239,7 +241,6 @@ def batch_decoder_states(
                 single bond => 0
                 double bond => 1
                 triple bond => 2
-                self loop => 3
                 """
                 edge_types += [edge_type_idx] * len(adj_list)
             
@@ -275,7 +276,9 @@ def batch_decoder_states(
                 # pick attachment points
                 'candidate_attachment_points',
                 # pick edge
-                'candidate_edge_targets'
+                'candidate_edge_targets',
+                'prior_focus_atoms',
+                'focus_atoms',
             ]), [i[1] for i in tmp])
     if len(current_batch) > 0:
         yield (Batch.from_data_list([i[0] for i in current_batch], follow_batch = [
@@ -290,5 +293,7 @@ def batch_decoder_states(
             # pick attachment points
             'candidate_attachment_points',
             # pick edge
-            'candidate_edge_targets'
+            'candidate_edge_targets',
+            'prior_focus_atoms',
+            'focus_atoms',
         ]), [i[1] for i in current_batch])
