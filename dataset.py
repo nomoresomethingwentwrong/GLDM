@@ -27,7 +27,7 @@ to_increment_by_num_nodes_in_graph = [
     "candidate_attachment_points",
     # pick edge
     "focus_atoms",
-    # "prior_focus_atoms",
+    "prior_focus_atoms",
     "candidate_edge_targets",
     # "candidate_edge_type_masks",
 ]
