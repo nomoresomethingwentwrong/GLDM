@@ -9,7 +9,7 @@ from rdkit import Chem
 
 
 class MoLeRGenerator(DistributionMatchingGenerator):
-    def __init__(self, ckpt_file_path, device="cuda:0"):
+    def __init__(self, ckpt_file_path, layer_type, device="cuda:0"):
         dataset = MolerDataset(
             root="/data/ongh0068",
             raw_moler_trace_dataset_parent_folder="/data/ongh0068/guacamol/trace_dir",
@@ -17,7 +17,11 @@ class MoLeRGenerator(DistributionMatchingGenerator):
             split="valid_0",
         )
         params = get_params(dataset)
-
+        ###################################################
+        params['full_graph_encoder']['layer_type'] = layer_type
+        params['partial_graph_encoder']['layer_type'] = layer_type
+        # params['using_cyclical_anneal'] = True
+        ###################################################
         self.model = BaseModel.load_from_checkpoint(
             ckpt_file_path, params=params, dataset=dataset
         )

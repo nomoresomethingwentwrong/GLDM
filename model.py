@@ -4,6 +4,7 @@ from pytorch_lightning import LightningModule
 from model_utils import GenericMLP, MoLeROutput, PropertyRegressionMLP
 from encoder import GraphEncoder, PartialGraphEncoder
 from rdkit.Chem import Draw
+from rdkit.Chem.Draw import IPythonConsole
 from rdkit import Chem
 from decoder import MLPDecoder
 import torch
@@ -14,6 +15,7 @@ from decoding_utils import (
     sample_indices_from_logprobs,
     batch_decoder_states,
 )
+from torchvision import transforms
 
 
 sys.path.append("../moler_reference")
@@ -28,108 +30,10 @@ from molecule_generation.utils.moler_decoding_utils import (
     MoleculeGenerationEdgeCandidateInfo,
 )
 
-
-class BaseModel(LightningModule):
-    def __init__(self, params, dataset, num_train_batches=1, batch_size=1):
-        """Params is a nested dictionary with the relevant parameters."""
-        super(BaseModel, self).__init__()
-        self._init_params(params, dataset)
-        self.save_hyperparameters()
-        if "training_hyperparams" in params:
-            self._training_hyperparams = params["training_hyperparams"]
-        else:
-            self._training_hyperparams = None
-        self._params = params
-        self._num_train_batches = num_train_batches
-        self._batch_size = batch_size
-        self._use_oclr_scheduler = params["use_oclr_scheduler"]
-        self._decode_on_validation_end = params['decode_on_validation_end']
-        self._using_cyclical_anneal = params['using_cyclical_anneal']
-        # Graph encoders
-        self._full_graph_encoder = GraphEncoder(**self._params["full_graph_encoder"])
-        self._partial_graph_encoder = PartialGraphEncoder(
-            **self._params["partial_graph_encoder"]
-        )
-
-        # Replace this with any other latent space mapping techniques eg diffusion
-        self._mean_log_var_mlp = GenericMLP(**self._params["mean_log_var_mlp"])
-
-        # MLP for regression task on graph properties
-        self._include_property_regressors = "graph_properties" in self._params
-        if self._include_property_regressors:
-            self._graph_property_pred_loss_weight = self._params[
-                "graph_property_pred_loss_weight"
-            ]
-            self._property_predictors = torch.nn.ModuleDict()
-            for prop_name, prop_params in self._params["graph_properties"].items():
-                prop_stddev = dataset.metadata.get(f"{prop_name}_stddev")
-                if not (prop_params.get("normalise_loss", True)):
-                    prop_stddev = None
-                self._property_predictors[prop_name] = PropertyRegressionMLP(
-                    **prop_params["mlp"],
-                    property_stddev=prop_stddev,
-                )
-
-        # MLP decoders
-        self._decoder = MLPDecoder(self._params["decoder"])
-
-        # params for latent space
-        self._latent_sample_strategy = self._params["latent_sample_strategy"]
-        self._latent_repr_dim = self._params["latent_repr_size"]
-        self._kl_divergence_weight = self._params["kl_divergence_weight"]
-        self._kl_divergence_annealing_beta = self._params[
-            "kl_divergence_annealing_beta"
-        ]
-
-    def _init_params(self, params, dataset):
-        """
-        Initialise class weights for next node prediction and placefolder for
-        motif/node embeddings.
-        """
-
-        # Get some information out from the dataset:
-        # next_node_type_distribution = dataset.metadata.get(
-        #     "train_next_node_type_distribution"
-        # )
-        # class_weight_factor = params.get(
-        #     "node_type_predictor_class_loss_weight_factor", 0.0
-        # )
-
-        # if not (0.0 <= class_weight_factor <= 1.0):
-        #     raise ValueError(
-        #         f"Node class loss weight node_classifier_class_loss_weight_factor must be in [0,1], but is {class_weight_factor}!"
-        #     )
-        # if class_weight_factor > 0:
-        #     atom_type_nums = [
-        #         next_node_type_distribution[dataset.node_type_index_to_string[type_idx]]
-        #         for type_idx in range(dataset.num_node_types)
-        #     ]
-        #     atom_type_nums.append(next_node_type_distribution["None"])
-
-        #     self.class_weights = get_class_balancing_weights(
-        #         class_counts=atom_type_nums, class_weight_factor=class_weight_factor
-        #     )
-        # else:
-        #     self.class_weights = None
-
-        self._motif_vocabulary = dataset.metadata.get("motif_vocabulary")
-        self._uses_motifs = self._motif_vocabulary is not None
-
-        self._node_categorical_num_classes = len(dataset.node_type_index_to_string)
-
-        if self.uses_categorical_features:
-            if "categorical_features_embedding_dim" in params:
-                self._node_categorical_features_embedding = None
-
-        if self.uses_motifs:
-            # Record the set of atom types, which will be a subset of all node types.
-            self._atom_types = set(
-                dataset._atom_type_featuriser.index_to_atom_type_map.values()
-            )
-
-        self._index_to_node_type_map = dataset.node_type_index_to_string
-        self._atom_featurisers = dataset._metadata["feature_extractors"]
-        self._num_node_types = dataset.num_node_types
+class AbstractModel(LightningModule):
+    """Common decoding methods for each model (decoding at inference time doesn't change)"""
+    def __init__(self):
+        super(AbstractModel, self).__init__()
 
     def _is_atom_type(self, node_type):
         if not self.uses_motifs:
@@ -193,268 +97,6 @@ class BaseModel(LightningModule):
     @property
     def latent_dim(self):
         return self._latent_repr_dim
-
-    def sample_from_latent_repr(self, latent_repr):
-        mean_and_log_var = self.mean_log_var_mlp(latent_repr)
-        # mean_and_log_var = torch.clamp(mean_and_log_var, min=-10, max=10)
-        # perturb latent repr
-        mu = mean_and_log_var[:, : self.latent_dim]  # Shape: [V, MD]
-        log_var = mean_and_log_var[:, self.latent_dim :]  # Shape: [V, MD]
-
-        # result_representations: shape [num_partial_graphs, latent_repr_dim]
-        z = self.reparametrize(mu, log_var)
-        # p, q, z = self.reparametrize(mu, log_var)
-
-        return mu, log_var, z
-        # return p, q, z
-
-    def reparametrize(self, mu, log_var):
-        """Samples a different noise vector for each partial graph.
-        TODO: look into the other sampling strategies."""
-        std = torch.exp(0.5 * log_var)
-        eps = torch.randn_like(std)
-        return eps * std + mu
-        # p = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(std))
-        # q = torch.distributions.Normal(mu, std)
-        # z = q.rsample()
-        # return p, q, z
-
-    def forward(self, batch):
-        moler_output = self._run_step(batch)
-        return (
-            moler_output.first_node_type_logits,
-            moler_output.node_type_logits,
-            moler_output.edge_candidate_logits,
-            moler_output.edge_type_logits,
-            moler_output.attachment_point_selection_logits,
-        )
-
-    def _run_step(self, batch):
-        # Obtain graph level representation of original molecular graph
-        input_molecule_representations = self.full_graph_encoder(
-            original_graph_node_categorical_features=batch.original_graph_node_categorical_features,
-            node_features=batch.original_graph_x.float(),
-            edge_index=batch.original_graph_edge_index,
-            edge_features=batch.original_graph_edge_features,  # can be edge_type or edge_attr
-            batch_index=batch.original_graph_x_batch,
-        )
-
-        # Obtain graph level representation of the partial graph
-        partial_graph_representions, node_representations = self.partial_graph_encoder(
-            partial_graph_node_categorical_features=batch.partial_node_categorical_features,
-            node_features=batch.x,
-            edge_index=batch.edge_index.long(),
-            edge_features=batch.partial_graph_edge_features,
-            graph_to_focus_node_map=batch.focus_node,
-            candidate_attachment_points=batch.valid_attachment_point_choices,
-            batch_index=batch.batch,
-        )
-
-        # Apply latent sampling strategy
-        # mu, log_var, latent_representation = self.sample_from_latent_repr(
-        #     input_molecule_representations
-        # )
-        mu, log_var, latent_representation = self.sample_from_latent_repr(
-            input_molecule_representations
-        )
-
-        # Forward pass through decoder
-        (
-            first_node_type_logits,
-            node_type_logits,
-            edge_candidate_logits,
-            edge_type_logits,
-            attachment_point_selection_logits,
-        ) = self.decoder(
-            input_molecule_representations=latent_representation,
-            graph_representations=partial_graph_representions,
-            graphs_requiring_node_choices=batch.correct_node_type_choices_batch.unique(),
-            # edge selection
-            node_representations=node_representations,
-            num_graphs_in_batch=len(batch.ptr) - 1,
-            focus_node_idx_in_batch=batch.focus_node,
-            node_to_graph_map=batch.batch,
-            candidate_edge_targets=batch.valid_edge_choices[:, 1].long(),
-            candidate_edge_features=batch.edge_features,
-            # attachment selection
-            candidate_attachment_points=batch.valid_attachment_point_choices.long(),
-        )
-
-        # NOTE: loss computation will be done in lightning module
-        return MoLeROutput(
-            first_node_type_logits=first_node_type_logits,
-            node_type_logits=node_type_logits,
-            edge_candidate_logits=edge_candidate_logits,
-            edge_type_logits=edge_type_logits,
-            attachment_point_selection_logits=attachment_point_selection_logits,
-            mu=mu,
-            log_var=log_var,
-            # p=p,
-            # q=q,
-            latent_representation=latent_representation,
-        )
-
-    def compute_loss(self, moler_output, batch):
-        # num_correct_node_type_choices = (
-        #     batch.correct_node_type_choices_ptr.unique().shape[-1] - 1
-        # )
-        node_type_multihot_labels = batch.correct_node_type_choices  # .view(
-        #     num_correct_node_type_choices, -1
-        # )
-
-        first_node_type_multihot_labels = (
-            batch.correct_first_node_type_choices
-        )  # .view(len(batch.ptr) -1, -1)
-
-        loss = self.decoder.compute_decoder_loss(
-            # node selection
-            node_type_logits=moler_output.node_type_logits,
-            node_type_multihot_labels=node_type_multihot_labels,
-            # first node selection
-            first_node_type_logits=moler_output.first_node_type_logits,
-            first_node_type_multihot_labels=first_node_type_multihot_labels,
-            # edge selection
-            num_graphs_in_batch=len(batch.ptr) - 1,
-            node_to_graph_map=batch.batch,
-            candidate_edge_targets=batch.valid_edge_choices[:, 1].long(),
-            edge_candidate_logits=moler_output.edge_candidate_logits,  # as is
-            per_graph_num_correct_edge_choices=batch.num_correct_edge_choices,
-            edge_candidate_correctness_labels=batch.correct_edge_choices,
-            no_edge_selected_labels=batch.stop_node_label,
-            # edge type selection
-            correct_edge_choices=batch.correct_edge_choices,
-            valid_edge_types=batch.valid_edge_types,
-            edge_type_logits=moler_output.edge_type_logits,
-            edge_type_onehot_labels=batch.correct_edge_types,
-            # attachement point
-            attachment_point_selection_logits=moler_output.attachment_point_selection_logits,
-            attachment_point_candidate_to_graph_map=batch.valid_attachment_point_choices_batch.long(),
-            attachment_point_correct_choices=batch.correct_attachment_point_choice.long(),
-        )
-
-        return loss
-
-    def compute_property_prediction_loss(self, latent_representation, batch):
-        """TODO: Since graph property regression is more of a auxillary loss than anything, this function will be
-        decoupled in the future into `compute_properties` and `compute_property_prediction_loss` so that
-        it can be passed into the `_run_step` function and returned in MolerOutput."""
-        property_prediction_losses = {}
-        for prop_name, property_predictor in self._property_predictors.items():
-            predictions = property_predictor(latent_representation)
-            property_prediction_losses[prop_name] = property_predictor.compute_loss(
-                predictions=predictions, labels=batch[prop_name]
-            )
-        # sum up all the property prediction losses
-        return sum([loss for loss in property_prediction_losses.values()])
-
-    def step(self, batch):
-        moler_output = self._run_step(batch)
-
-        loss_metrics = {}
-        loss_metrics['decoder_loss'] = self.compute_loss(moler_output=moler_output, batch=batch)
-        if self._include_property_regressors:
-            loss_metrics['property_prediction_loss'] = (
-                self._graph_property_pred_loss_weight
-                * self.compute_property_prediction_loss(
-                    latent_representation=moler_output.latent_representation,
-                    batch=batch,
-                )
-            )
-        # print("log_var", torch.max(moler_output.log_var))
-        kld_summand = torch.square(moler_output.mu)
-        + torch.exp(moler_output.log_var)
-        - moler_output.log_var
-        - 1
-        loss_metrics['kld_loss'] = torch.mean( kld_summand)/2.0
-        # loss_metrics['kld_loss'] = torch.distributions.kl_divergence(
-        #     moler_output.q, moler_output.p
-        # ).mean()
-        # kld weight will start from 0 and increase to the original amount.
-
-        annealing_factor = self.trainer.global_step % (self._num_train_batches // 4) if self._using_cyclical_anneal else self.trainer.global_step
-
-        loss_metrics['kld_weight'] = (
-            (  # cyclical anealing where each cycle will span 1/4 of the training epoch
-                1.0
-                - self._kl_divergence_annealing_beta
-                ** annealing_factor
-            )
-            * self._kl_divergence_weight
-        )
-
-        loss_metrics['kld_loss'] *= loss_metrics['kld_weight']
-
-        loss_metrics['loss'] = sum(loss_metrics.values())
-
-        logs = loss_metrics
-        return loss_metrics['loss'], logs
-
-    def training_step(self, batch, batch_idx):
-        loss, logs = self.step(batch)
-        for metric in logs:
-            self.log(f"train_{metric}", logs[metric], batch_size=self._batch_size)
-
-        return loss
-
-    def validation_step(self, batch, batch_idx):
-        loss, logs = self.step(batch)
-        for metric in logs:
-            self.log(f"val_{metric}", logs[metric], batch_size=self._batch_size)
-
-        return loss
-
-    def validation_epoch_end(self, outputs):
-        # decoder 50 random molecules using fixed random seed
-        if self._decode_on_validation_end:
-            if self.current_epoch < 3:
-                pass
-            else:
-                generator = torch.Generator(device = self.full_graph_encoder._dummy_param.device).manual_seed(0)
-                latent_vectors = torch.randn(size = (50, 512), generator = generator, device = self.full_graph_encoder._dummy_param.device)
-                decoder_states = self.decode(latent_representations = latent_vectors)
-                print([Chem.MolToSmiles(decoder_states[i].molecule) for i in range(len(decoder_states))])
-                try:
-                    img = Draw.MolsToGridImage([decoder_states[i].molecule for i in range(len(decoder_states))][:], subImgSize=(200,200), maxMols = 1000, molsPerRow=10)
-                    self.logger.experiment.add_image('sample_molecules', img, self.current_epoch)
-                except Exception as e:
-                    print(e)
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
-            self.parameters(), lr=self._training_hyperparams["max_lr"]
-        )
-
-        # optimizer = torch.optim.AdamW(
-        #     self.parameters(),
-        #     lr=self._training_hyperparams["max_lr"],
-        #     betas=(0.9, 0.999),
-        # )
-        if self._use_oclr_scheduler:
-            lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
-                optimizer=optimizer,
-                max_lr=self._training_hyperparams["max_lr"],
-                div_factor=self._training_hyperparams["div_factor"],
-                three_phase=self._training_hyperparams["three_phase"],
-                epochs=self.trainer.max_epochs,
-                # number of times step() is called by the scheduler per epoch
-                # take the number of batches // frequency of calling the scheduler
-                steps_per_epoch=self._num_train_batches // self.trainer.max_epochs,
-            )
-
-            lr_scheduler_params = {}
-            lr_scheduler_params["scheduler"] = lr_scheduler
-
-            lr_scheduler_params["interval"] = "step"
-            frequency_of_lr_scheduler_step = self.trainer.max_epochs
-            lr_scheduler_params[
-                "frequency"
-            ] = frequency_of_lr_scheduler_step  # number of batches to wait before calling lr_scheduler.step()
-
-            optimizer_dict = {}
-            optimizer_dict["optimizer"] = optimizer
-            optimizer_dict["lr_scheduler"] = lr_scheduler_params
-            return optimizer_dict
-        else:
-            return optimizer
 
     def _decoder_pick_first_atom_types(
         self,
@@ -1180,3 +822,349 @@ class BaseModel(LightningModule):
             )
 
         return decoder_states
+
+    def validation_epoch_end(self, outputs):
+        # decoder 50 random molecules using fixed random seed
+        if self._decode_on_validation_end:
+            if self.current_epoch < 3:
+                pass
+            else:
+                generator = torch.Generator(device = self.full_graph_encoder._dummy_param.device).manual_seed(0)
+                latent_vectors = torch.randn(size = (50, 512), generator = generator, device = self.full_graph_encoder._dummy_param.device)
+                decoder_states = self.decode(latent_representations = latent_vectors)
+                print([Chem.MolToSmiles(decoder_states[i].molecule) for i in range(len(decoder_states))])
+                try:
+                    pil_imgs = [Draw.MolToImage(decoder_states[i].molecule) for i in range(len(decoder_states))]
+                    pil_img_tensors = [transforms.ToTensor()(pil_img).permute(1,2,0) for pil_img in pil_imgs]
+                    
+                    for pil_img_tensor in pil_img_tensors:
+                        self.logger.experiment.add_image('sample_molecules', pil_img_tensor, self.current_epoch)
+                except Exception as e:
+                    print(e)
+
+class BaseModel(AbstractModel):
+    def __init__(self, params, dataset, num_train_batches=1, batch_size=1):
+        """Params is a nested dictionary with the relevant parameters."""
+        super(BaseModel, self).__init__()
+        self._init_params(params, dataset)
+        self.save_hyperparameters()
+        if "training_hyperparams" in params:
+            self._training_hyperparams = params["training_hyperparams"]
+        else:
+            self._training_hyperparams = None
+        self._params = params
+        self._num_train_batches = num_train_batches
+        self._batch_size = batch_size
+        self._use_oclr_scheduler = params["use_oclr_scheduler"]
+        self._decode_on_validation_end = params['decode_on_validation_end']
+        self._using_cyclical_anneal = params['using_cyclical_anneal']
+        # Graph encoders
+        self._full_graph_encoder = GraphEncoder(**self._params["full_graph_encoder"])
+        self._partial_graph_encoder = PartialGraphEncoder(
+            **self._params["partial_graph_encoder"]
+        )
+
+        # Replace this with any other latent space mapping techniques eg diffusion
+        self._mean_log_var_mlp = GenericMLP(**self._params["mean_log_var_mlp"])
+
+        # MLP for regression task on graph properties
+        self._include_property_regressors = "graph_properties" in self._params
+        if self._include_property_regressors:
+            self._graph_property_pred_loss_weight = self._params[
+                "graph_property_pred_loss_weight"
+            ]
+            self._property_predictors = torch.nn.ModuleDict()
+            for prop_name, prop_params in self._params["graph_properties"].items():
+                prop_stddev = dataset.metadata.get(f"{prop_name}_stddev")
+                if not (prop_params.get("normalise_loss", True)):
+                    prop_stddev = None
+                self._property_predictors[prop_name] = PropertyRegressionMLP(
+                    **prop_params["mlp"],
+                    property_stddev=prop_stddev,
+                )
+
+        # MLP decoders
+        self._decoder = MLPDecoder(self._params["decoder"])
+
+        # params for latent space
+        self._latent_sample_strategy = self._params["latent_sample_strategy"]
+        self._latent_repr_dim = self._params["latent_repr_size"]
+        self._kl_divergence_weight = self._params["kl_divergence_weight"]
+        self._kl_divergence_annealing_beta = self._params[
+            "kl_divergence_annealing_beta"
+        ]
+
+    def _init_params(self, params, dataset):
+        """
+        Initialise class weights for next node prediction and placefolder for
+        motif/node embeddings.
+        """
+
+        self._motif_vocabulary = dataset.metadata.get("motif_vocabulary")
+        self._uses_motifs = self._motif_vocabulary is not None
+
+        self._node_categorical_num_classes = len(dataset.node_type_index_to_string)
+
+        if self.uses_categorical_features:
+            if "categorical_features_embedding_dim" in params:
+                self._node_categorical_features_embedding = None
+
+        if self.uses_motifs:
+            # Record the set of atom types, which will be a subset of all node types.
+            self._atom_types = set(
+                dataset._atom_type_featuriser.index_to_atom_type_map.values()
+            )
+
+        self._index_to_node_type_map = dataset.node_type_index_to_string
+        self._atom_featurisers = dataset._metadata["feature_extractors"]
+        self._num_node_types = dataset.num_node_types
+
+
+    def sample_from_latent_repr(self, latent_repr):
+        mean_and_log_var = self.mean_log_var_mlp(latent_repr)
+        # mean_and_log_var = torch.clamp(mean_and_log_var, min=-10, max=10)
+        # perturb latent repr
+        mu = mean_and_log_var[:, : self.latent_dim]  # Shape: [V, MD]
+        log_var = mean_and_log_var[:, self.latent_dim :]  # Shape: [V, MD]
+
+        # result_representations: shape [num_partial_graphs, latent_repr_dim]
+        z = self.reparametrize(mu, log_var)
+        # p, q, z = self.reparametrize(mu, log_var)
+
+        return mu, log_var, z
+        # return p, q, z
+
+    def reparametrize(self, mu, log_var):
+        """Samples a different noise vector for each partial graph.
+        TODO: look into the other sampling strategies."""
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        return eps * std + mu
+        # p = torch.distributions.Normal(torch.zeros_like(mu), torch.ones_like(std))
+        # q = torch.distributions.Normal(mu, std)
+        # z = q.rsample()
+        # return p, q, z
+
+    def forward(self, batch):
+        moler_output = self._run_step(batch)
+        return (
+            moler_output.first_node_type_logits,
+            moler_output.node_type_logits,
+            moler_output.edge_candidate_logits,
+            moler_output.edge_type_logits,
+            moler_output.attachment_point_selection_logits,
+        )
+
+    def _run_step(self, batch):
+        # Obtain graph level representation of original molecular graph
+        input_molecule_representations = self.full_graph_encoder(
+            original_graph_node_categorical_features=batch.original_graph_node_categorical_features,
+            node_features=batch.original_graph_x.float(),
+            edge_index=batch.original_graph_edge_index,
+            edge_features=batch.original_graph_edge_features,  # can be edge_type or edge_attr
+            batch_index=batch.original_graph_x_batch,
+        )
+
+        # Obtain graph level representation of the partial graph
+        partial_graph_representions, node_representations = self.partial_graph_encoder(
+            partial_graph_node_categorical_features=batch.partial_node_categorical_features,
+            node_features=batch.x,
+            edge_index=batch.edge_index.long(),
+            edge_features=batch.partial_graph_edge_features,
+            graph_to_focus_node_map=batch.focus_node,
+            candidate_attachment_points=batch.valid_attachment_point_choices,
+            batch_index=batch.batch,
+        )
+
+        # Apply latent sampling strategy
+        # mu, log_var, latent_representation = self.sample_from_latent_repr(
+        #     input_molecule_representations
+        # )
+        mu, log_var, latent_representation = self.sample_from_latent_repr(
+            input_molecule_representations
+        )
+
+        # Forward pass through decoder
+        (
+            first_node_type_logits,
+            node_type_logits,
+            edge_candidate_logits,
+            edge_type_logits,
+            attachment_point_selection_logits,
+        ) = self.decoder(
+            input_molecule_representations=latent_representation,
+            graph_representations=partial_graph_representions,
+            graphs_requiring_node_choices=batch.correct_node_type_choices_batch.unique(),
+            # edge selection
+            node_representations=node_representations,
+            num_graphs_in_batch=len(batch.ptr) - 1,
+            focus_node_idx_in_batch=batch.focus_node,
+            node_to_graph_map=batch.batch,
+            candidate_edge_targets=batch.valid_edge_choices[:, 1].long(),
+            candidate_edge_features=batch.edge_features,
+            # attachment selection
+            candidate_attachment_points=batch.valid_attachment_point_choices.long(),
+        )
+
+        # NOTE: loss computation will be done in lightning module
+        return MoLeROutput(
+            first_node_type_logits=first_node_type_logits,
+            node_type_logits=node_type_logits,
+            edge_candidate_logits=edge_candidate_logits,
+            edge_type_logits=edge_type_logits,
+            attachment_point_selection_logits=attachment_point_selection_logits,
+            mu=mu,
+            log_var=log_var,
+            # p=p,
+            # q=q,
+            latent_representation=latent_representation,
+        )
+
+    def compute_loss(self, moler_output, batch):
+        # num_correct_node_type_choices = (
+        #     batch.correct_node_type_choices_ptr.unique().shape[-1] - 1
+        # )
+        node_type_multihot_labels = batch.correct_node_type_choices  # .view(
+        #     num_correct_node_type_choices, -1
+        # )
+
+        first_node_type_multihot_labels = (
+            batch.correct_first_node_type_choices
+        )  # .view(len(batch.ptr) -1, -1)
+
+        loss = self.decoder.compute_decoder_loss(
+            # node selection
+            node_type_logits=moler_output.node_type_logits,
+            node_type_multihot_labels=node_type_multihot_labels,
+            # first node selection
+            first_node_type_logits=moler_output.first_node_type_logits,
+            first_node_type_multihot_labels=first_node_type_multihot_labels,
+            # edge selection
+            num_graphs_in_batch=len(batch.ptr) - 1,
+            node_to_graph_map=batch.batch,
+            candidate_edge_targets=batch.valid_edge_choices[:, 1].long(),
+            edge_candidate_logits=moler_output.edge_candidate_logits,  # as is
+            per_graph_num_correct_edge_choices=batch.num_correct_edge_choices,
+            edge_candidate_correctness_labels=batch.correct_edge_choices,
+            no_edge_selected_labels=batch.stop_node_label,
+            # edge type selection
+            correct_edge_choices=batch.correct_edge_choices,
+            valid_edge_types=batch.valid_edge_types,
+            edge_type_logits=moler_output.edge_type_logits,
+            edge_type_onehot_labels=batch.correct_edge_types,
+            # attachement point
+            attachment_point_selection_logits=moler_output.attachment_point_selection_logits,
+            attachment_point_candidate_to_graph_map=batch.valid_attachment_point_choices_batch.long(),
+            attachment_point_correct_choices=batch.correct_attachment_point_choice.long(),
+        )
+
+        return loss
+
+    def compute_property_prediction_loss(self, latent_representation, batch):
+        """TODO: Since graph property regression is more of a auxillary loss than anything, this function will be
+        decoupled in the future into `compute_properties` and `compute_property_prediction_loss` so that
+        it can be passed into the `_run_step` function and returned in MolerOutput."""
+        property_prediction_losses = {}
+        for prop_name, property_predictor in self._property_predictors.items():
+            predictions = property_predictor(latent_representation)
+            property_prediction_losses[prop_name] = property_predictor.compute_loss(
+                predictions=predictions, labels=batch[prop_name]
+            )
+        # sum up all the property prediction losses
+        return sum([loss for loss in property_prediction_losses.values()])
+
+    def step(self, batch):
+        moler_output = self._run_step(batch)
+
+        loss_metrics = {}
+        loss_metrics['decoder_loss'] = self.compute_loss(moler_output=moler_output, batch=batch)
+        if self._include_property_regressors:
+            loss_metrics['property_prediction_loss'] = (
+                self._graph_property_pred_loss_weight
+                * self.compute_property_prediction_loss(
+                    latent_representation=moler_output.latent_representation,
+                    batch=batch,
+                )
+            )
+        # print("log_var", torch.max(moler_output.log_var))
+        kld_summand = torch.square(moler_output.mu)
+        + torch.exp(moler_output.log_var)
+        - moler_output.log_var
+        - 1
+        loss_metrics['kld_loss'] = torch.mean( kld_summand)/2.0
+        # loss_metrics['kld_loss'] = torch.distributions.kl_divergence(
+        #     moler_output.q, moler_output.p
+        # ).mean()
+        # kld weight will start from 0 and increase to the original amount.
+
+        annealing_factor = self.trainer.global_step % (self._num_train_batches // 4) if self._using_cyclical_anneal else self.trainer.global_step
+
+        loss_metrics['kld_weight'] = (
+            (  # cyclical anealing where each cycle will span 1/4 of the training epoch
+                1.0
+                - self._kl_divergence_annealing_beta
+                ** annealing_factor
+            )
+            * self._kl_divergence_weight
+        )
+
+        loss_metrics['kld_loss'] *= loss_metrics['kld_weight']
+
+        loss_metrics['loss'] = sum(loss_metrics.values())
+
+        logs = loss_metrics
+        return loss_metrics['loss'], logs
+
+    def training_step(self, batch, batch_idx):
+        loss, logs = self.step(batch)
+        for metric in logs:
+            self.log(f"train_{metric}", logs[metric], batch_size=self._batch_size)
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        loss, logs = self.step(batch)
+        for metric in logs:
+            self.log(f"val_{metric}", logs[metric], batch_size=self._batch_size)
+
+        return loss
+
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=self._training_hyperparams["max_lr"]
+        )
+
+        # optimizer = torch.optim.AdamW(
+        #     self.parameters(),
+        #     lr=self._training_hyperparams["max_lr"],
+        #     betas=(0.9, 0.999),
+        # )
+        if self._use_oclr_scheduler:
+            lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer=optimizer,
+                max_lr=self._training_hyperparams["max_lr"],
+                div_factor=self._training_hyperparams["div_factor"],
+                three_phase=self._training_hyperparams["three_phase"],
+                epochs=self.trainer.max_epochs,
+                # number of times step() is called by the scheduler per epoch
+                # take the number of batches // frequency of calling the scheduler
+                steps_per_epoch=self._num_train_batches // self.trainer.max_epochs,
+            )
+
+            lr_scheduler_params = {}
+            lr_scheduler_params["scheduler"] = lr_scheduler
+
+            lr_scheduler_params["interval"] = "step"
+            frequency_of_lr_scheduler_step = self.trainer.max_epochs
+            lr_scheduler_params[
+                "frequency"
+            ] = frequency_of_lr_scheduler_step  # number of batches to wait before calling lr_scheduler.step()
+
+            optimizer_dict = {}
+            optimizer_dict["optimizer"] = optimizer
+            optimizer_dict["lr_scheduler"] = lr_scheduler_params
+            return optimizer_dict
+        else:
+            return optimizer
+

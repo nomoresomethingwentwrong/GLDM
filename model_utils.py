@@ -188,6 +188,39 @@ class GenericMLP(torch.nn.Module):
         x = self._final_layer(x)
         return x
 
+class DiscriminatorMLP(torch.nn.Module):
+    def __init__(
+        self,
+        input_feature_dim,
+        output_size = 1,
+        hidden_layer_dims=[256, 256],
+        activation_layer_type="leaky_relu",
+        dropout_prob=0.2,
+    ):
+        super(DiscriminatorMLP, self).__init__()
+        self._mlp = GenericMLP(
+            input_feature_dim = input_feature_dim,
+            output_size = output_size,
+            hidden_layer_dims=hidden_layer_dims,
+            activation_layer_type=activation_layer_type,
+            dropout_prob=dropout_prob,
+        )
+
+    def forward(
+        self,
+        latent_representation,
+    ):
+        return self._mlp(latent_representation)
+
+
+    def compute_loss(
+        self,
+        predictions,
+        labels, 
+    ):
+        """Return L2 loss and scale it by std dev"""
+        loss = torch.nn.functional.binary_cross_entropy_with_logits(predictions, labels)
+        return  loss
 
 class PropertyRegressionMLP(torch.nn.Module):
     def __init__(
@@ -664,5 +697,6 @@ def get_params(dataset):
         },
         "use_oclr_scheduler": False,  # doesn't use oclr by default
         "decode_on_validation_end": True,
-        "using_cyclical_anneal": False
+        "using_cyclical_anneal": False,
+        "discriminator": {"input_feature_dim": 512, "output_size": 1, "hidden_layer_dims": [256, 128, 64]},
     }

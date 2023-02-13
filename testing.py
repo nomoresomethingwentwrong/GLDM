@@ -1,6 +1,7 @@
 from dataset import MolerDataset
 from torch_geometric.loader import DataLoader
 from model import BaseModel
+from aae import AAE
 from model_utils import get_params
 from pytorch_lightning import Trainer
 from torch.utils.data import ConcatDataset
@@ -128,13 +129,25 @@ if __name__ == "__main__":
     params['full_graph_encoder']['layer_type'] = layer_type
     params['partial_graph_encoder']['layer_type'] = layer_type
     # params['using_cyclical_anneal'] = True
+    model_architecture = sys.argv[2] # expects aae, vae
+    if model_architecture == 'aae':
+        model = AAE(
+            params,
+            valid_dataset,
+            num_train_batches=len(train_dataloader),
+            batch_size=batch_size,
+        )
+    elif model_architecture == 'vae':
+        model = BaseModel(
+            params,
+            valid_dataset,
+            num_train_batches=len(train_dataloader),
+            batch_size=batch_size,
+        )  # train_dataset)
+    else:
+        raise ValueError
     ###################################################
-    model = BaseModel(
-        params,
-        valid_dataset,
-        num_train_batches=len(train_dataloader),
-        batch_size=batch_size,
-    )  # train_dataset)
+
 
     # Get current time for folder path.
     now = str(datetime.now()).replace(" ", "_").replace(":", "_")

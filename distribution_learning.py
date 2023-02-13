@@ -12,7 +12,8 @@ if __name__ == '__main__':
     parser.add_argument('--dist_file', default='/data/ongh0068/guacamol/guacamol_v1_all.smiles')
     parser.add_argument('--output_dir', default=None, help='Output directory')
     parser.add_argument('--suite', default='v2')
-    parser.add_argument('--ckpt_file_path', default = '/data/ongh0068/2023-01-21_13_30_47.083217sanity/epoch=943-val_loss=4.30.ckpt')
+    parser.add_argument('--ckpt_file_path', default = '/data/ongh0068/2023-02-04_20_40_45.735930/epoch=06-val_loss=0.47.ckpt')
+    parser.add_argument('--layer_type')
     args = parser.parse_args()
 
     if args.output_dir is None:
@@ -21,7 +22,7 @@ if __name__ == '__main__':
     with open(args.dist_file, 'r') as smiles_file:
         smiles_list = [line.strip() for line in smiles_file.readlines()]
 
-    generator = MoLeRGenerator(ckpt_file_path=args.ckpt_file_path)
+    generator = MoLeRGenerator(ckpt_file_path=args.ckpt_file_path, layer_type = args.layer_type)
 
     json_file_path = os.path.join(args.output_dir, 'distribution_learning_results.json')
 
