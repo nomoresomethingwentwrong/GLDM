@@ -41,7 +41,7 @@ class AAE(AbstractModel):
         )
 
         # Replace this with any other latent space mapping techniques eg diffusion
-        self._mean_log_var_mlp = GenericMLP(**self._params["mean_log_var_mlp"])
+        self._latent_repr_mlp = GenericMLP(**self._params["latent_repr_mlp"])
 
         # MLP for regression task on graph properties
         self._include_property_regressors = "graph_properties" in self._params
@@ -72,13 +72,18 @@ class AAE(AbstractModel):
         self._generator = torch.nn.ModuleList([
             self._full_graph_encoder,
             self._partial_graph_encoder,
-            self._mean_log_var_mlp,
+            # self._mean_log_var_mlp,
+            self.latent_repr_mlp,
             self._property_predictors,
             self._decoder
         ])
         # Discriminator
         self._discriminator = DiscriminatorMLP(**self._params['discriminator'])
     
+    @property 
+    def latent_repr_mlp(self):
+        return self._latent_repr_mlp
+
     @property
     def discriminator(self):
         return self._discriminator  
@@ -109,19 +114,20 @@ class AAE(AbstractModel):
         self._num_node_types = dataset.num_node_types
 
 
-    def sample_from_latent_repr(self, latent_repr):
-        mean_and_log_var = self.mean_log_var_mlp(latent_repr)
-        # mean_and_log_var = torch.clamp(mean_and_log_var, min=-10, max=10)
-        # perturb latent repr
-        mu = mean_and_log_var[:, : self.latent_dim]  # Shape: [V, MD]
-        log_var = mean_and_log_var[:, self.latent_dim :]  # Shape: [V, MD]
+    # def sample_from_latent_repr(self, latent_repr):
+    #     mean_and_log_var = self.mean_log_var_mlp(latent_repr)
+    #     # mean_and_log_var = torch.clamp(mean_and_log_var, min=-10, max=10)
+    #     # perturb latent repr
+    #     mu = mean_and_log_var[:, : self.latent_dim]  # Shape: [V, MD]
+    #     log_var = mean_and_log_var[:, self.latent_dim :]  # Shape: [V, MD]
 
-        # result_representations: shape [num_partial_graphs, latent_repr_dim]
-        z = self.reparametrize(mu, log_var)
-        # p, q, z = self.reparametrize(mu, log_var)
+    #     # result_representations: shape [num_partial_graphs, latent_repr_dim]
+    #     z = self.reparametrize(mu, log_var)
+    #     # p, q, z = self.reparametrize(mu, log_var)
 
-        return mu, log_var, z
-        # return p, q, z
+    #     return mu, log_var, z
+    #     # return p, q, z
+
 
     def reparametrize(self, mu, log_var):
         """Samples a different noise vector for each partial graph.
@@ -165,13 +171,20 @@ class AAE(AbstractModel):
             batch_index=batch.batch,
         )
 
-        # Apply latent sampling strategy
+
+        # TODO: CHANGE THIS TO SIMPLY MAP THE INPUT MOLECULE REPRESENTATION TO 
+        # THE LATENT SPACE WITHOUT SAMPLING!
         # mu, log_var, latent_representation = self.sample_from_latent_repr(
         #     input_molecule_representations
         # )
-        mu, log_var, latent_representation = self.sample_from_latent_repr(
+        latent_representation = self.latent_repr_mlp(
             input_molecule_representations
-        )
+        ) # currently maps to 512
+        """
+        Here, when we were using the vae, we mapped to 1024, half of it represented the mean, half represented the std.
+        so at the end of the day, we still arrived at a dim of 512. However, now we have a choice, to simply map it to 512,
+        which requires us to change the output of the latent_repr_mlp to map to 512 instead of 1024 
+        """
 
         # Forward pass through decoder
         (
@@ -202,8 +215,8 @@ class AAE(AbstractModel):
             edge_candidate_logits=edge_candidate_logits,
             edge_type_logits=edge_type_logits,
             attachment_point_selection_logits=attachment_point_selection_logits,
-            mu=mu,
-            log_var=log_var,
+            mu=torch.randn_like(latent_representation), # placeholder; not actually used 
+            log_var=torch.randn_like(latent_representation), # placeholder; not actually used 
             # p=p,
             # q=q,
             latent_representation=latent_representation,
@@ -330,29 +343,26 @@ class AAE(AbstractModel):
                     batch=batch,
                 )
             )
-        # print("log_var", torch.max(moler_output.log_var))
-        kld_summand = torch.square(moler_output.mu)
-        + torch.exp(moler_output.log_var)
-        - moler_output.log_var
-        - 1
-        loss_metrics['kld_loss'] = torch.mean( kld_summand)/2.0
-        # loss_metrics['kld_loss'] = torch.distributions.kl_divergence(
-        #     moler_output.q, moler_output.p
-        # ).mean()
-        # kld weight will start from 0 and increase to the original amount.
 
-        annealing_factor = self.trainer.global_step % (self._num_train_batches // 4) if self._using_cyclical_anneal else self.trainer.global_step
+        """Instead of computing the kl divergence loss, we simply allow the latent space to be decoded """
+        # kld_summand = torch.square(moler_output.mu)
+        # + torch.exp(moler_output.log_var)
+        # - moler_output.log_var
+        # - 1
+        # loss_metrics['kld_loss'] = torch.mean( kld_summand)/2.0
 
-        loss_metrics['kld_weight'] = (
-            (  # cyclical anealing where each cycle will span 1/4 of the training epoch
-                1.0
-                - self._kl_divergence_annealing_beta
-                ** annealing_factor
-            )
-            * self._kl_divergence_weight
-        )
+        # annealing_factor = self.trainer.global_step % (self._num_train_batches // 4) if self._using_cyclical_anneal else self.trainer.global_step
 
-        loss_metrics['kld_loss'] *= loss_metrics['kld_weight']
+        # loss_metrics['kld_weight'] = (
+        #     (  # cyclical anealing where each cycle will span 1/4 of the training epoch
+        #         1.0
+        #         - self._kl_divergence_annealing_beta
+        #         ** annealing_factor
+        #     )
+        #     * self._kl_divergence_weight
+        # )
+
+        # loss_metrics['kld_loss'] *= loss_metrics['kld_weight']
 
         loss_metrics['loss'] = sum(loss_metrics.values())
 
@@ -374,7 +384,7 @@ class AAE(AbstractModel):
             self._generator.parameters(), lr=self._training_hyperparams["max_lr"]
         )
         optimizer_discrim = torch.optim.Adam(
-            self._discriminator.parameters(), lr=self._training_hyperparams["max_lr"]
+            self._discriminator.parameters(), lr=self._training_hyperparams["max_lr"] #/ 100
         )
         # optimizer = torch.optim.AdamW(
         #     self.parameters(),

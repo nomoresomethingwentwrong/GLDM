@@ -163,7 +163,7 @@ if __name__ == "__main__":
         mode="min",
         filename="{epoch:02d}-{val_loss:.2f}",
     )
-
+    
     trainer = Trainer(
         accelerator="gpu",
         max_epochs=30,
@@ -172,7 +172,7 @@ if __name__ == "__main__":
         logger=tensorboard_logger,
         gradient_clip_val=1.0,
         # detect_anomaly=True,
-        # track_grad_norm=2,
+        # track_grad_norm=int(sys.argv[3]), # set to 2 for l2 norm
     )  # overfit_batches=1)
     trainer.fit(
         model,

@@ -699,4 +699,5 @@ def get_params(dataset):
         "decode_on_validation_end": True,
         "using_cyclical_anneal": False,
         "discriminator": {"input_feature_dim": 512, "output_size": 1, "hidden_layer_dims": [256, 128, 64]},
+        'latent_repr_mlp': {"input_feature_dim": 832, "output_size": 512, "hidden_layer_dims":[], "use_bias":False},
     }
