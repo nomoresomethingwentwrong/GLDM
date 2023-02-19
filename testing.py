@@ -156,19 +156,28 @@ if __name__ == "__main__":
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tensorboard_logger = TensorBoardLogger(save_dir=f"../{now}", name=f"logs_{now}")
     early_stopping = EarlyStopping(monitor="val_loss", patience=3)
-    checkpoint_callback = ModelCheckpoint(
-        save_top_k=1,
-        monitor="val_loss",
-        dirpath=f"../{now}",
-        mode="min",
-        filename="{epoch:02d}-{val_loss:.2f}",
-    )
-    
+    if model_architecture == 'vae':
+        checkpoint_callback = ModelCheckpoint(
+            save_top_k=1,
+            monitor="val_loss",
+            dirpath=f"../{now}",
+            mode="min",
+            filename="{epoch:02d}-{val_loss:.2f}",
+        )
+    elif model_architecture == 'aae':
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=f"../{now}",
+            filename="{epoch:02d}-{train_loss:.2f}",
+            save_best_only=False, 
+            period=10
+        )
+
+    callbacks = [checkpoint_callback, lr_monitor, early_stopping] if  model_architecture == 'vae' else [checkpoint_callback, lr_monitor]
     trainer = Trainer(
         accelerator="gpu",
         max_epochs=30,
         devices=[2],
-        callbacks=[checkpoint_callback, lr_monitor, early_stopping],
+        callbacks=callbacks,
         logger=tensorboard_logger,
         gradient_clip_val=1.0,
         # detect_anomaly=True,

@@ -14,6 +14,7 @@ if __name__ == '__main__':
     parser.add_argument('--suite', default='v2')
     parser.add_argument('--ckpt_file_path', default = '/data/ongh0068/2023-02-04_20_40_45.735930/epoch=06-val_loss=0.47.ckpt')
     parser.add_argument('--layer_type')
+    parser.add_argument('--model_type')
     args = parser.parse_args()
 
     if args.output_dir is None:
@@ -22,7 +23,7 @@ if __name__ == '__main__':
     with open(args.dist_file, 'r') as smiles_file:
         smiles_list = [line.strip() for line in smiles_file.readlines()]
 
-    generator = MoLeRGenerator(ckpt_file_path=args.ckpt_file_path, layer_type = args.layer_type)
+    generator = MoLeRGenerator(ckpt_file_path=args.ckpt_file_path, layer_type = args.layer_type, model_type = args.model_type)
 
     json_file_path = os.path.join(args.output_dir, 'distribution_learning_results.json')
 

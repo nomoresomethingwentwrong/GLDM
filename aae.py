@@ -374,7 +374,11 @@ class AAE(AbstractModel):
         for metric in logs:
             self.log(f"train_{metric}", logs[metric], batch_size=self._batch_size)
         return loss
-
+    # def validation_step(self, batch, batch_idx, optimizer_idx):
+    #     loss, logs = self.step(batch, optimizer_idx= optimizer_idx)
+    #     for metric in logs:
+    #         self.log(f"val_{metric}", logs[metric], batch_size=self._batch_size)
+    #     return loss
 
     def configure_optimizers(self):
         # Separate out the discriminator params like in 
