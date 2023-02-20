@@ -24,7 +24,7 @@ if __name__ == "__main__":
     valid_split = "valid_0"
 
     raw_moler_trace_dataset_parent_folder = "/data/ongh0068/guacamol/trace_dir"
-    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/l1000/already_batched"
+    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/guacamol/already_batched"
 
     train_dataset1 = MolerDataset(
         root="/data/ongh0068",
@@ -168,8 +168,7 @@ if __name__ == "__main__":
         checkpoint_callback = ModelCheckpoint(
             dirpath=f"../{now}",
             filename="{epoch:02d}-{train_loss:.2f}",
-            save_best_only=False, 
-            period=10
+            every_n_epochs =2
         )
 
     callbacks = [checkpoint_callback, lr_monitor, early_stopping] if  model_architecture == 'vae' else [checkpoint_callback, lr_monitor]
