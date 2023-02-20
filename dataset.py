@@ -621,7 +621,7 @@ class MolerDataset(Dataset):
                     "candidate_edge_targets",
                 ],
             )
-        if self._split == 'train' and self._gen_step_drop_probability > 0:
+        if 'train' in self._split and self._gen_step_drop_probability > 0:
             unrolled = data.to_data_list()
             selected_idx = np.arange(len(unrolled))[
                 np.random.rand(len(unrolled)) > self._gen_step_drop_probability
@@ -643,6 +643,7 @@ class MolerDataset(Dataset):
                     "candidate_edge_targets",
                 ],
             )
+            return data
         else:
             return data
 
@@ -671,3 +672,186 @@ class MolerDataset(Dataset):
         ###################################################################################
 
         # alternative for reading in individual .pt files (NOTE currently infeasible)
+
+
+class LincsDataset(MolerDataset):
+    def __init__(
+        self,
+        root,
+        raw_moler_trace_dataset_parent_folder,  # absolute path
+        output_pyg_trace_dataset_parent_folder,  # absolute path
+        split="train",
+        transform=None,
+        pre_transform=None,
+        using_self_loops=False,
+        gen_step_drop_probability=0.5,
+        edge_repr=EdgeRepresentation.edge_attr,
+        num_samples_debug_mode = None, # only for debugging, will pick first n number of samples deterministically
+    ):
+        super().__init__(
+            root = root,
+            raw_moler_trace_dataset_parent_folder = raw_moler_trace_dataset_parent_folder,  # absolute path
+            output_pyg_trace_dataset_parent_folder = output_pyg_trace_dataset_parent_folder,  # absolute path
+            split=split,
+            transform=transform,
+            pre_transform=pre_transform,
+            using_self_loops=using_self_loops,
+            gen_step_drop_probability=gen_step_drop_probability,
+            edge_repr=edge_repr,
+            num_samples_debug_mode = num_samples_debug_mode, # only for debugging, will pick first n number of samples deterministically
+        )
+
+    def _extract_generation_steps(self, molecule):
+        molecule_gen_steps = []
+        molecule_property_values = {
+            k: [v] for k, v in molecule.graph_property_values.items()
+        }
+        for gen_step in molecule:
+            gen_step_features = {}
+
+            gen_step_features["original_graph_x"] = molecule.node_features
+            # have an edge type attribute to tell apart each of the 3 bond types
+            edge_indexes = []
+            edge_types = []
+            for i, adj_list in enumerate(molecule.adjacency_lists):
+                if len(adj_list) != 0:
+                    edge_index = adj_list.T
+                    edge_indexes += [edge_index]
+                    """ 
+                    edge types: 
+                    single bond => 0
+                    double bond => 1
+                    triple bond => 2
+                    self loop => 3
+                    """
+                    edge_types += [i] * len(adj_list)
+
+            # add self loops
+            if (
+                self._using_self_loops
+            ):  # by default this is not used since pyg layers cover this
+                num_nodes_in_original_graph = molecule.node_features.shape[0]
+                edge_indexes += [
+                    self._generate_self_loops(num_nodes=num_nodes_in_original_graph).T
+                ]
+                edge_types += [3] * num_nodes_in_original_graph
+
+            gen_step_features["original_graph_edge_index"] = (
+                np.concatenate(edge_indexes, 1)
+                if len(edge_indexes) > 0
+                else np.array(edge_indexes)
+            )
+
+            if self._edge_repr == EdgeRepresentation.edge_type:
+                gen_step_features["original_graph_edge_features"] = np.array(edge_types)
+            elif self._edge_repr == EdgeRepresentation.edge_attr:
+                edge_attr = edge_types
+                # TODO: add other edge features produced from preprocessing
+                gen_step_features["original_graph_edge_features"] = np.array(edge_attr)
+            else:
+                raise NotImplementedError
+
+            gen_step_features[
+                "original_graph_node_categorical_features"
+            ] = molecule.node_categorical_features
+
+            gen_step_features["x"] = gen_step.partial_node_features
+            gen_step_features["focus_node"] = [gen_step.focus_node]
+
+            # have an edge type attribute to tell apart each of the 3 bond types
+            edge_indexes = []
+            edge_types = []
+            for i, adj_list in enumerate(gen_step.partial_adjacency_lists):
+                if len(adj_list) != 0:
+                    edge_index = adj_list.T
+                    edge_indexes += [edge_index]
+                    """ 
+                    edge types: 
+                    single bond => 0
+                    double bond => 1
+                    triple bond => 2
+                    self loop => 3
+                    """
+                    edge_types += [i] * len(adj_list)
+
+            # add self loops
+            if self._using_self_loops:
+                num_nodes_in_partial_graph = gen_step.partial_node_features.shape[0]
+                edge_indexes += [
+                    self._generate_self_loops(num_nodes=num_nodes_in_partial_graph).T
+                ]
+                edge_types += [3] * num_nodes_in_partial_graph
+
+            gen_step_features["edge_index"] = (
+                np.concatenate(edge_indexes, 1)
+                if len(edge_indexes) > 0
+                else np.array(edge_indexes)
+            )
+
+            if self._edge_repr == EdgeRepresentation.edge_type:
+                gen_step_features["partial_graph_edge_features"] = np.array(edge_types)
+            elif self._edge_repr == EdgeRepresentation.edge_attr:
+                edge_attr = edge_types
+                # TODO: add other edge features produced from preprocessing
+                gen_step_features["partial_graph_edge_features"] = np.array(edge_attr)
+            else:
+                raise NotImplementedError
+
+            gen_step_features["edge_features"] = np.array(gen_step.edge_features)
+            gen_step_features["correct_edge_choices"] = gen_step.correct_edge_choices
+
+            num_correct_edge_choices = np.sum(gen_step.correct_edge_choices)
+            gen_step_features["num_correct_edge_choices"] = [num_correct_edge_choices]
+            gen_step_features["stop_node_label"] = [int(num_correct_edge_choices == 0)]
+            gen_step_features["valid_edge_choices"] = gen_step.valid_edge_choices
+            gen_step_features["valid_edge_types"] = gen_step.valid_edge_types
+
+            gen_step_features["correct_edge_types"] = gen_step.correct_edge_types
+            gen_step_features[
+                "partial_node_categorical_features"
+            ] = gen_step.partial_node_categorical_features
+            if gen_step.correct_attachment_point_choice is not None:
+                gen_step_features["correct_attachment_point_choice"] = [
+                    list(gen_step.valid_attachment_point_choices).index(
+                        gen_step.correct_attachment_point_choice
+                    )
+                ]
+            else:
+                gen_step_features["correct_attachment_point_choice"] = []
+            gen_step_features[
+                "valid_attachment_point_choices"
+            ] = gen_step.valid_attachment_point_choices
+
+            # And finally, the correct node type choices. Here, we have an empty list of
+            # correct choices for all steps where we didn't choose a node, so we skip that:
+            if gen_step.correct_node_type_choices is not None:
+                gen_step_features["correct_node_type_choices"] = np.array(
+                    [self.node_types_to_multi_hot(gen_step.correct_node_type_choices)]
+                )
+            else:
+                gen_step_features["correct_node_type_choices"] = np.zeros(
+                    shape=(0,) + (self.num_node_types,)
+                )
+            if molecule.correct_first_node_type_choices is not None:
+                gen_step_features["correct_first_node_type_choices"] = np.array(
+                    [
+                        self.node_types_to_multi_hot(
+                            molecule.correct_first_node_type_choices
+                        )
+                    ]
+                )
+            else:
+                gen_step_features["correct_first_node_type_choices"] = np.zeros(
+                    shape=(0,) + (self.num_node_types,)
+                )
+            # Add graph_property_values
+            gen_step_features = {**gen_step_features, **molecule_property_values}
+            gen_step_features['l1000_idx'] = gen_step.idx
+            molecule_gen_steps += [gen_step_features]
+
+        molecule_gen_steps = self._to_tensor_moler(molecule_gen_steps)
+
+        return [MolerData(**step) for step in molecule_gen_steps]
+
+
+
