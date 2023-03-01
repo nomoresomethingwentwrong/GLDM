@@ -134,6 +134,7 @@ if __name__ == "__main__":
         model = AAE(
             params,
             valid_dataset,
+            using_lincs=False,
             num_train_batches=len(train_dataloader),
             batch_size=batch_size,
         )
@@ -141,6 +142,7 @@ if __name__ == "__main__":
         model = BaseModel(
             params,
             valid_dataset,
+            using_lincs=False,
             num_train_batches=len(train_dataloader),
             batch_size=batch_size,
         )  # train_dataset)
