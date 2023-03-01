@@ -10,6 +10,7 @@ import random
 import sys
 from tqdm import tqdm
 from enum import Enum, auto
+from numpy import load
 
 
 class EdgeRepresentation(Enum):
@@ -97,7 +98,7 @@ class MolerDataset(Dataset):
         using_self_loops=False,
         gen_step_drop_probability=0.5,
         edge_repr=EdgeRepresentation.edge_attr,
-        num_samples_debug_mode = None, # only for debugging, will pick first n number of samples deterministically
+        num_samples_debug_mode=None,  # only for debugging, will pick first n number of samples deterministically
     ):
         self._processed_file_paths = None
         self._transform = transform
@@ -605,7 +606,7 @@ class MolerDataset(Dataset):
             # and return them instead of random subsampling
             unrolled = data.to_data_list()
             return Batch.from_data_list(
-                unrolled[:self._num_samples_debug_mode],
+                unrolled[: self._num_samples_debug_mode],
                 follow_batch=[
                     "correct_edge_choices",
                     "correct_edge_types",
@@ -621,7 +622,7 @@ class MolerDataset(Dataset):
                     "candidate_edge_targets",
                 ],
             )
-        if 'train' in self._split and self._gen_step_drop_probability > 0:
+        if "train" in self._split and self._gen_step_drop_probability > 0:
             unrolled = data.to_data_list()
             selected_idx = np.arange(len(unrolled))[
                 np.random.rand(len(unrolled)) > self._gen_step_drop_probability
@@ -674,32 +675,61 @@ class MolerDataset(Dataset):
         # alternative for reading in individual .pt files (NOTE currently infeasible)
 
 
+def str_to_int(row):
+    """Specifically for the L1000 csv"""
+    row["ControlIndices"] = np.asarray(row["ControlIndices"].split(" "), dtype=np.int32)
+    row["TumourIndices"] = np.asarray(row["TumourIndices"].split(" "), dtype=np.int32)
+    return row
+
+
 class LincsDataset(MolerDataset):
     def __init__(
         self,
         root,
         raw_moler_trace_dataset_parent_folder,  # absolute path
         output_pyg_trace_dataset_parent_folder,  # absolute path
+        gene_exp_controls_file_path,
+        gene_exp_tumour_file_path,
+        lincs_csv_file_path,
         split="train",
         transform=None,
         pre_transform=None,
         using_self_loops=False,
         gen_step_drop_probability=0.5,
         edge_repr=EdgeRepresentation.edge_attr,
-        num_samples_debug_mode = None, # only for debugging, will pick first n number of samples deterministically
+        num_samples_debug_mode=None,  # only for debugging, will pick first n number of samples deterministically
     ):
         super().__init__(
-            root = root,
-            raw_moler_trace_dataset_parent_folder = raw_moler_trace_dataset_parent_folder,  # absolute path
-            output_pyg_trace_dataset_parent_folder = output_pyg_trace_dataset_parent_folder,  # absolute path
+            root=root,
+            raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # absolute path
+            output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,  # absolute path
             split=split,
             transform=transform,
             pre_transform=pre_transform,
             using_self_loops=using_self_loops,
             gen_step_drop_probability=gen_step_drop_probability,
             edge_repr=edge_repr,
-            num_samples_debug_mode = num_samples_debug_mode, # only for debugging, will pick first n number of samples deterministically
+            num_samples_debug_mode=num_samples_debug_mode,  # only for debugging, will pick first n number of samples deterministically
         )
+        print("Loading controls gene expression...")
+        self._gene_exp_controls = torch.from_numpy(
+            load(gene_exp_controls_file_path, allow_pickle=True)["genes"]
+        )
+        print("Loading tumour gene expression...")
+        self._gene_exp_tumour = torch.from_numpy(
+            load(gene_exp_tumour_file_path, allow_pickle=True)["genes"]
+        )
+        print("Loading csv...")
+        self._lincs_df = pd.read_csv(
+            lincs_csv_file_path
+        )  # expects the whole dataframe with train, validation and test splits
+        self._lincs_df = self._lincs_df.apply(lambda x: str_to_int(x), axis=1)
+        self._experiment_idx_to_control_gene_exp_idx = self._lincs_df[
+            "ControlIndices"
+        ].values  # numpy array
+        self._experiment_idx_to_tumour_gene_exp_idx = self._lincs_df[
+            "TumourIndices"
+        ].values  # numpy array
 
     def _extract_generation_steps(self, molecule):
         molecule_gen_steps = []
@@ -846,12 +876,96 @@ class LincsDataset(MolerDataset):
                 )
             # Add graph_property_values
             gen_step_features = {**gen_step_features, **molecule_property_values}
-            gen_step_features['l1000_idx'] = gen_step.idx
+            gen_step_features["l1000_idx"] = gen_step.idx
             molecule_gen_steps += [gen_step_features]
 
         molecule_gen_steps = self._to_tensor_moler(molecule_gen_steps)
 
         return [MolerData(**step) for step in molecule_gen_steps]
 
+    def get(self, idx):
+        """
+        This is a workaround for reading in one data shard at a time (one molecule at a time)
+        Each molecule has a varying number of generation steps, and all the generation steps
+        for one particular molecule will be stored in a single data shard.
+        We use the idx to reference the molecule idx and read in each data shard and store it
+        as an attribute in the class. Then, we maintain a counter for iterating through the
+        shard. Once we read the end of the data shard, we use the idx to read in another molecule.
+        """
 
+        file_path = self.processed_file_names[idx]
+        with gzip.open(file_path, "rb") as f:
+            data = pickle.load(f)
+        if self._num_samples_debug_mode is not None:
+            # NOTE: only for debugging; deterministically pick first n samples
+            # and return them instead of random subsampling
+            unrolled = data.to_data_list()
+            return Batch.from_data_list(
+                unrolled[: self._num_samples_debug_mode],
+                follow_batch=[
+                    "correct_edge_choices",
+                    "correct_edge_types",
+                    "valid_edge_choices",
+                    "valid_attachment_point_choices",
+                    "correct_attachment_point_choice",
+                    "correct_node_type_choices",
+                    "original_graph_x",
+                    "correct_first_node_type_choices",
+                    # pick attachment points
+                    "candidate_attachment_points",
+                    # pick edge
+                    "candidate_edge_targets",
+                ],
+            )
 
+        if self._split == "train" and self._gen_step_drop_probability > 0:
+            unrolled = data.to_data_list()
+            selected_idx = np.arange(len(unrolled))[
+                np.random.rand(len(unrolled)) > self._gen_step_drop_probability
+            ]
+            data = Batch.from_data_list(
+                [unrolled[i] for i in selected_idx],
+                follow_batch=[
+                    "correct_edge_choices",
+                    "correct_edge_types",
+                    "valid_edge_choices",
+                    "valid_attachment_point_choices",
+                    "correct_attachment_point_choice",
+                    "correct_node_type_choices",
+                    "original_graph_x",
+                    "correct_first_node_type_choices",
+                    # pick attachment points
+                    "candidate_attachment_points",
+                    # pick edge
+                    "candidate_edge_targets",
+                ],
+            )
+        # given the df row idx, we want to index into the df, then get the control
+        # and tumour indices => then we randomly pick one from each and index into the
+        # torch tensor.
+
+        # Method 1: directly find row from df using iloc => likely slower because
+        # it is O(n) but likely less space complexity because each training, and validation
+        # dataset will only need to store its own split of the df
+
+        # Method 2: store the entire df and the entire npz for controls and tumous gene expressions
+        # this will be faster because we can just directly pick from the npz
+        # similar to in  https://github.com/insilicomedicine/BiAAE/blob/master/dataloader/lincs_dl.py
+
+        # uses method 2
+        experiment_idx = data.l1000_idx  # get row idx
+        control_idx = self._experiment_idx_to_control_gene_exp_idx[
+            experiment_idx
+        ]  # get list of control idx
+        gene_exp_control_idx = [
+            random.randint(0, len(arr)) for arr in control_idx
+        ]  # choose one of the control expt idx for each sample in the batch
+        tumour_idx = self._experiment_idx_to_tumour_gene_exp_idx[experiment_idx]
+        gene_exp_tumour_idx = [random.randint(0, len(arr)) for arr in tumour_idx]
+        control_gene_exp = self._gene_exp_controls[
+            gene_exp_control_idx
+        ]  # torch tensors of size batch_size x gene exp dim
+        tumour_gene_exp = self._gene_exp_tumour[gene_exp_tumour_idx]
+        diff_gene_exp = tumour_gene_exp - control_gene_exp
+        data.gene_expressions = diff_gene_exp.float()
+        return data
