@@ -734,4 +734,10 @@ def get_params(dataset):
             "hidden_layer_dims": [],
             "use_bias": False,
         },
+        "gene_exp_condition_mlp": {
+            "input_feature_dim": 512 + 978,  # should be 832 + 978 for AAE
+            "output_size": 512,
+            "hidden_layer_dims": [],
+            "use_bias": False,
+        },
     }
