@@ -30,8 +30,10 @@ from molecule_generation.utils.moler_decoding_utils import (
     MoleculeGenerationEdgeCandidateInfo,
 )
 
+
 class AbstractModel(LightningModule):
     """Common decoding methods for each model (decoding at inference time doesn't change)"""
+
     def __init__(self):
         super(AbstractModel, self).__init__()
 
@@ -115,8 +117,8 @@ class AbstractModel(LightningModule):
             )  # Shape [G, NT + 1]
 
             first_atom_type_logprobs = torch.nn.functional.log_softmax(
-                first_node_type_logits[:, 1:], # because index 0 corresponds to UNK
-                dim=1,  
+                first_node_type_logits[:, 1:],  # because index 0 corresponds to UNK
+                dim=1,
             )  # Shape [G, NT]
 
             first_atom_type_pick_results = []
@@ -198,7 +200,7 @@ class AbstractModel(LightningModule):
 
             attachment_point_logprobs = torch.nn.functional.log_softmax(
                 torch.tensor(attachment_point_logits), dim=0
-            )#.numpy()
+            )  # .numpy()
             picked_att_point_indices = sample_indices_from_logprobs(
                 num_samples, sampling_mode, attachment_point_logprobs
             )
@@ -337,7 +339,10 @@ class AbstractModel(LightningModule):
                     torch.cat(
                         [
                             decoder_state_edge_candidate_logits,
-                            torch.tensor([decoder_state_no_edge_logit], device = self.full_graph_encoder._dummy_param.device),
+                            torch.tensor(
+                                [decoder_state_no_edge_logit],
+                                device=self.full_graph_encoder._dummy_param.device,
+                            ),
                         ]
                     ),
                     dim=0,
@@ -537,7 +542,7 @@ class AbstractModel(LightningModule):
                 ),
                 batch_index=batch.batch,
             )
-            
+
             node_type_logits = self.decoder.pick_node_type(
                 input_molecule_representations=batch.latent_representation,
                 graph_representations=graph_representations,
@@ -548,7 +553,7 @@ class AbstractModel(LightningModule):
             # back later so that the type lookup indices work out:
             atom_type_logprobs = torch.nn.functional.log_softmax(
                 node_type_logits[:, 1:], dim=1
-            )#.numpy()  # Shape [G, NT]
+            )  # .numpy()  # Shape [G, NT]
 
             atom_type_pick_results = []
             # Iterate over each of the rows independently, sampling for each input state:
@@ -710,13 +715,13 @@ class AbstractModel(LightningModule):
                             require_attachment_point_states.append(new_decoder_state)
                         else:
                             require_bond_states.append(new_decoder_state)
-            
+
             if self.uses_motifs:
                 # Step 2': For states that require picking an attachment point, pick one:
                 require_attachment_point_states = restrict_to_beam_size_per_mol(
                     require_attachment_point_states, beam_size
                 )
-                
+
                 (
                     attachment_pick_results,
                     attachment_pick_logits,
@@ -829,21 +834,41 @@ class AbstractModel(LightningModule):
             if self.current_epoch < 3:
                 pass
             else:
-                generator = torch.Generator(device = self.full_graph_encoder._dummy_param.device).manual_seed(0)
-                latent_vectors = torch.randn(size = (50, 512), generator = generator, device = self.full_graph_encoder._dummy_param.device)
-                decoder_states = self.decode(latent_representations = latent_vectors)
-                print([Chem.MolToSmiles(decoder_states[i].molecule) for i in range(len(decoder_states))])
+                generator = torch.Generator(
+                    device=self.full_graph_encoder._dummy_param.device
+                ).manual_seed(0)
+                latent_vectors = torch.randn(
+                    size=(50, 512),
+                    generator=generator,
+                    device=self.full_graph_encoder._dummy_param.device,
+                )
+                decoder_states = self.decode(latent_representations=latent_vectors)
+                print(
+                    [
+                        Chem.MolToSmiles(decoder_states[i].molecule)
+                        for i in range(len(decoder_states))
+                    ]
+                )
                 try:
-                    pil_imgs = [Draw.MolToImage(decoder_states[i].molecule) for i in range(len(decoder_states))]
-                    pil_img_tensors = [transforms.ToTensor()(pil_img).permute(1,2,0) for pil_img in pil_imgs]
-                    
+                    pil_imgs = [
+                        Draw.MolToImage(decoder_states[i].molecule)
+                        for i in range(len(decoder_states))
+                    ]
+                    pil_img_tensors = [
+                        transforms.ToTensor()(pil_img).permute(1, 2, 0)
+                        for pil_img in pil_imgs
+                    ]
+
                     for pil_img_tensor in pil_img_tensors:
-                        self.logger.experiment.add_image('sample_molecules', pil_img_tensor, self.current_epoch)
+                        self.logger.experiment.add_image(
+                            "sample_molecules", pil_img_tensor, self.current_epoch
+                        )
                 except Exception as e:
                     print(e)
 
+
 class BaseModel(AbstractModel):
-    def __init__(self, params, dataset, num_train_batches=1, batch_size=1):
+    def __init__(self, params, dataset, using_lincs, num_train_batches=1, batch_size=1):
         """Params is a nested dictionary with the relevant parameters."""
         super(BaseModel, self).__init__()
         self._init_params(params, dataset)
@@ -856,8 +881,8 @@ class BaseModel(AbstractModel):
         self._num_train_batches = num_train_batches
         self._batch_size = batch_size
         self._use_oclr_scheduler = params["use_oclr_scheduler"]
-        self._decode_on_validation_end = params['decode_on_validation_end']
-        self._using_cyclical_anneal = params['using_cyclical_anneal']
+        self._decode_on_validation_end = params["decode_on_validation_end"]
+        self._using_cyclical_anneal = params["using_cyclical_anneal"]
         # Graph encoders
         self._full_graph_encoder = GraphEncoder(**self._params["full_graph_encoder"])
         self._partial_graph_encoder = PartialGraphEncoder(
@@ -893,6 +918,12 @@ class BaseModel(AbstractModel):
         self._kl_divergence_annealing_beta = self._params[
             "kl_divergence_annealing_beta"
         ]
+        # If using lincs gene expression
+        self._using_lincs = using_lincs
+        if self._using_lincs:
+            self._gene_exp_condition_mlp = GenericMLP(
+                **self._params["gene_exp_condition_mlp"]
+            )
 
     def _init_params(self, params, dataset):
         """
@@ -919,7 +950,6 @@ class BaseModel(AbstractModel):
         self._atom_featurisers = dataset._metadata["feature_extractors"]
         self._num_node_types = dataset.num_node_types
 
-
     def sample_from_latent_repr(self, latent_repr):
         mean_and_log_var = self.mean_log_var_mlp(latent_repr)
         # mean_and_log_var = torch.clamp(mean_and_log_var, min=-10, max=10)
@@ -934,6 +964,16 @@ class BaseModel(AbstractModel):
         return mu, log_var, z
         # return p, q, z
 
+    def condition_on_gene_expression(self, latent_representation, gene_expressions):
+        """
+        Latent representation has size batch_size x latent_dim
+        Gene expressions have size batch_size x 978
+        Output dimensions is batch_size x latent_dim
+        """
+        return self._gene_exp_condition_mlp(
+            torch.cat((latent_representation, gene_expressions), dim=-1)
+        )
+    
     def reparametrize(self, mu, log_var):
         """Samples a different noise vector for each partial graph.
         TODO: look into the other sampling strategies."""
@@ -977,13 +1017,17 @@ class BaseModel(AbstractModel):
         )
 
         # Apply latent sampling strategy
-        # mu, log_var, latent_representation = self.sample_from_latent_repr(
-        #     input_molecule_representations
-        # )
         mu, log_var, latent_representation = self.sample_from_latent_repr(
             input_molecule_representations
         )
-
+        # If using gene expression, then we condition the noise vector on
+        # the gene expression by passing it through another MLP
+        if self._using_lincs:
+            latent_representation = self.condition_on_gene_expression(
+                latent_representation=latent_representation,
+                gene_expressions=batch.gene_expressions,
+            )
+            
         # Forward pass through decoder
         (
             first_node_type_logits,
@@ -1077,9 +1121,11 @@ class BaseModel(AbstractModel):
         moler_output = self._run_step(batch)
 
         loss_metrics = {}
-        loss_metrics['decoder_loss'] = self.compute_loss(moler_output=moler_output, batch=batch)
+        loss_metrics["decoder_loss"] = self.compute_loss(
+            moler_output=moler_output, batch=batch
+        )
         if self._include_property_regressors:
-            loss_metrics['property_prediction_loss'] = (
+            loss_metrics["property_prediction_loss"] = (
                 self._graph_property_pred_loss_weight
                 * self.compute_property_prediction_loss(
                     latent_representation=moler_output.latent_representation,
@@ -1088,32 +1134,33 @@ class BaseModel(AbstractModel):
             )
         # print("log_var", torch.max(moler_output.log_var))
         kld_summand = torch.square(moler_output.mu)
-        + torch.exp(moler_output.log_var)
-        - moler_output.log_var
-        - 1
-        loss_metrics['kld_loss'] = torch.mean( kld_summand)/2.0
+        +torch.exp(moler_output.log_var)
+        -moler_output.log_var
+        -1
+        loss_metrics["kld_loss"] = torch.mean(kld_summand) / 2.0
         # loss_metrics['kld_loss'] = torch.distributions.kl_divergence(
         #     moler_output.q, moler_output.p
         # ).mean()
         # kld weight will start from 0 and increase to the original amount.
 
-        annealing_factor = self.trainer.global_step % (self._num_train_batches // 4) if self._using_cyclical_anneal else self.trainer.global_step
-
-        loss_metrics['kld_weight'] = (
-            (  # cyclical anealing where each cycle will span 1/4 of the training epoch
-                1.0
-                - self._kl_divergence_annealing_beta
-                ** annealing_factor
-            )
-            * self._kl_divergence_weight
+        annealing_factor = (
+            self.trainer.global_step % (self._num_train_batches // 4)
+            if self._using_cyclical_anneal
+            else self.trainer.global_step
         )
 
-        loss_metrics['kld_loss'] *= loss_metrics['kld_weight']
+        loss_metrics[
+            "kld_weight"
+        ] = (  # cyclical anealing where each cycle will span 1/4 of the training epoch
+            1.0 - self._kl_divergence_annealing_beta**annealing_factor
+        ) * self._kl_divergence_weight
 
-        loss_metrics['loss'] = sum(loss_metrics.values())
+        loss_metrics["kld_loss"] *= loss_metrics["kld_weight"]
+
+        loss_metrics["loss"] = sum(loss_metrics.values())
 
         logs = loss_metrics
-        return loss_metrics['loss'], logs
+        return loss_metrics["loss"], logs
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
@@ -1128,7 +1175,6 @@ class BaseModel(AbstractModel):
             self.log(f"val_{metric}", logs[metric], batch_size=self._batch_size)
 
         return loss
-
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
@@ -1167,4 +1213,3 @@ class BaseModel(AbstractModel):
             return optimizer_dict
         else:
             return optimizer
-
