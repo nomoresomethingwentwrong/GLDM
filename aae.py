@@ -20,7 +20,15 @@ https://github.com/ebartrum/lightning_gan_zoo/blob/main/core/lightning_module.py
 # https://github.com/nocotan/pytorch-lightning-gans/blob/master/models/wgan.py
 # https://github.com/bfarzin/pytorch_aae/blob/master/main_aae.py
 class AAE(AbstractModel):
-    def __init__(self, params, dataset, using_lincs, num_train_batches=1, batch_size=1):
+    def __init__(
+        self,
+        params,
+        dataset,
+        using_lincs,
+        include_predict_gene_exp_mlp=False,
+        num_train_batches=1,
+        batch_size=1,
+    ):
         """Params is a nested dictionary with the relevant parameters."""
         super(AAE, self).__init__()
         self._init_params(params, dataset)
@@ -85,10 +93,15 @@ class AAE(AbstractModel):
 
         # If using lincs gene expression
         self._using_lincs = using_lincs
+        self._include_predict_gene_exp_mlp = include_predict_gene_exp_mlp
         if self._using_lincs:
             self._gene_exp_condition_mlp = GenericMLP(
                 **self._params["gene_exp_condition_mlp"]
             )
+            if self._include_predict_gene_exp_mlp:
+                self._gene_exp_prediction_mlp = PropertyRegressionMLP(
+                    **self._params["gene_exp_prediction_mlp"]
+                )
 
     @property
     def latent_repr_mlp(self):
@@ -198,12 +211,11 @@ class AAE(AbstractModel):
             latent_representation = self.condition_on_gene_expression(
                 latent_representation=input_molecule_representations,
                 gene_expressions=batch.gene_expressions,
-            ) # currently maps to 512
+            )  # currently maps to 512
         else:
             latent_representation = self.latent_repr_mlp(
                 input_molecule_representations
             )  # currently maps to 512
-
 
         # Forward pass through decoder
         (
@@ -365,6 +377,13 @@ class AAE(AbstractModel):
         # sum up all the property prediction losses
         return sum([loss for loss in property_prediction_losses.values()])
 
+    def compute_gene_expression_prediction_loss(self, latent_representation, batch):
+        predictions = self._gene_exp_prediction_mlp(latent_representation)
+        gene_expression_prediction_loss = self._gene_exp_prediction_mlp.compute_loss(
+            predictions=predictions, labels=batch.gene_expressions
+        )
+        return gene_expression_prediction_loss
+
     def step(self, batch, optimizer_idx):
         moler_output = self._run_step(batch)
 
@@ -386,7 +405,14 @@ class AAE(AbstractModel):
                     batch=batch,
                 )
             )
-
+        if self._include_predict_gene_exp_mlp:
+            loss_metrics['gene_expression_prediction_loss'] = (
+                self._graph_property_pred_loss_weight
+                * self.compute_gene_expression_prediction_loss(
+                    latent_representation=moler_output.latent_representation,
+                    batch=batch,
+                )
+            )
         """Instead of computing the kl divergence loss, we simply allow the latent space to be decoded """
         # kld_summand = torch.square(moler_output.mu)
         # + torch.exp(moler_output.log_var)
