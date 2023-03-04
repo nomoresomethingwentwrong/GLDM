@@ -10,9 +10,11 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 import sys
+
 if __name__ == "__main__":
 
     batch_size = 1
+    NUM_WORKERS = 4
     train_split1 = "train_0"
     train_split2 = "train_1000"
     train_split3 = "train_2000"
@@ -24,7 +26,7 @@ if __name__ == "__main__":
     valid_split = "valid_0"
 
     raw_moler_trace_dataset_parent_folder = "/data/ongh0068/guacamol/trace_dir"
-    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/guacamol/already_batched"
+    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/l1000/already_batched"
 
     train_dataset1 = MolerDataset(
         root="/data/ongh0068",
@@ -104,6 +106,7 @@ if __name__ == "__main__":
             "original_graph_x",
             "correct_first_node_type_choices",
         ],
+        num_workers=NUM_WORKERS,
     )
 
     valid_dataloader = DataLoader(
@@ -121,16 +124,17 @@ if __name__ == "__main__":
             "original_graph_x",
             "correct_first_node_type_choices",
         ],
+        num_workers=NUM_WORKERS,
     )
 
     params = get_params(dataset=train_dataset1)  # train_dataset)
     ###################################################
     layer_type = sys.argv[1]  # change this
-    params['full_graph_encoder']['layer_type'] = layer_type
-    params['partial_graph_encoder']['layer_type'] = layer_type
+    params["full_graph_encoder"]["layer_type"] = layer_type
+    params["partial_graph_encoder"]["layer_type"] = layer_type
     # params['using_cyclical_anneal'] = True
-    model_architecture = sys.argv[2] # expects aae, vae
-    if model_architecture == 'aae':
+    model_architecture = sys.argv[2]  # expects aae, vae
+    if model_architecture == "aae":
         model = AAE(
             params,
             valid_dataset,
@@ -138,7 +142,7 @@ if __name__ == "__main__":
             num_train_batches=len(train_dataloader),
             batch_size=batch_size,
         )
-    elif model_architecture == 'vae':
+    elif model_architecture == "vae":
         model = BaseModel(
             params,
             valid_dataset,
@@ -150,7 +154,6 @@ if __name__ == "__main__":
         raise ValueError
     ###################################################
 
-
     # Get current time for folder path.
     now = str(datetime.now()).replace(" ", "_").replace(":", "_")
 
@@ -158,7 +161,7 @@ if __name__ == "__main__":
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tensorboard_logger = TensorBoardLogger(save_dir=f"../{now}", name=f"logs_{now}")
     early_stopping = EarlyStopping(monitor="val_loss", patience=3)
-    if model_architecture == 'vae':
+    if model_architecture == "vae":
         checkpoint_callback = ModelCheckpoint(
             save_top_k=1,
             monitor="val_loss",
@@ -166,14 +169,21 @@ if __name__ == "__main__":
             mode="min",
             filename="{epoch:02d}-{val_loss:.2f}",
         )
-    elif model_architecture == 'aae':
+    elif model_architecture == "aae":
         checkpoint_callback = ModelCheckpoint(
             dirpath=f"../{now}",
             filename="{epoch:02d}-{train_loss:.2f}",
-            every_n_epochs =2
+            monitor="epoch",
+            every_n_epochs=3,
+            save_on_train_epoch_end=True,
+            save_top_k=-1,
         )
 
-    callbacks = [checkpoint_callback, lr_monitor, early_stopping] if  model_architecture == 'vae' else [checkpoint_callback, lr_monitor]
+    callbacks = (
+        [checkpoint_callback, lr_monitor, early_stopping]
+        if model_architecture == "vae"
+        else [checkpoint_callback, lr_monitor]
+    )
     trainer = Trainer(
         accelerator="gpu",
         max_epochs=30,
