@@ -712,13 +712,9 @@ class LincsDataset(MolerDataset):
             num_samples_debug_mode=num_samples_debug_mode,  # only for debugging, will pick first n number of samples deterministically
         )
         print("Loading controls gene expression...")
-        self._gene_exp_controls = torch.from_numpy(
-            load(gene_exp_controls_file_path, allow_pickle=True)["genes"]
-        )
+        self._gene_exp_controls = load(gene_exp_controls_file_path, allow_pickle=True)["genes"].astype('float32')
         print("Loading tumour gene expression...")
-        self._gene_exp_tumour = torch.from_numpy(
-            load(gene_exp_tumour_file_path, allow_pickle=True)["genes"]
-        )
+        self._gene_exp_tumour = load(gene_exp_tumour_file_path, allow_pickle=True)["genes"].astype('float32')
         print("Loading csv...")
         self._lincs_df = pd.read_csv(
             lincs_csv_file_path
@@ -730,6 +726,7 @@ class LincsDataset(MolerDataset):
         self._experiment_idx_to_tumour_gene_exp_idx = self._lincs_df[
             "TumourIndices"
         ].values  # numpy array
+        del self._lincs_df
 
     def _extract_generation_steps(self, molecule):
         molecule_gen_steps = []
@@ -967,5 +964,5 @@ class LincsDataset(MolerDataset):
         ]  # torch tensors of size batch_size x gene exp dim
         tumour_gene_exp = self._gene_exp_tumour[gene_exp_tumour_idx]
         diff_gene_exp = tumour_gene_exp - control_gene_exp
-        data.gene_expressions = diff_gene_exp.float()
+        data.gene_expressions = torch.from_numpy(diff_gene_exp).float()
         return data

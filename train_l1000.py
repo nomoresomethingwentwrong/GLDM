@@ -11,12 +11,15 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 import sys
 
+# import torch.multiprocessing as mp
+
 """python train_l1000.py FiLMConv vae"""
 
 
 if __name__ == "__main__":
 
     batch_size = 1
+    NUM_WORKERS = 4
     train_split1 = "train_0"
     valid_split = "valid_0"
 
@@ -60,6 +63,8 @@ if __name__ == "__main__":
             "original_graph_x",
             "correct_first_node_type_choices",
         ],
+        num_workers=NUM_WORKERS,
+        # prefetch_factor=0,
     )
 
     valid_dataloader = DataLoader(
@@ -77,7 +82,10 @@ if __name__ == "__main__":
             "original_graph_x",
             "correct_first_node_type_choices",
         ],
+        num_workers=NUM_WORKERS,
+        # prefetch_factor=0,
     )
+    print(len(train_dataloader), len(valid_dataloader))
 
     params = get_params(dataset=train_dataset)  # train_dataset)
     ###################################################
@@ -125,7 +133,10 @@ if __name__ == "__main__":
         checkpoint_callback = ModelCheckpoint(
             dirpath=f"../{now}",
             filename="{epoch:02d}-{train_loss:.2f}",
-            every_n_epochs=2,
+            monitor="epoch",
+            every_n_epochs=3,
+            save_on_train_epoch_end=True,
+            save_top_k=-1,
         )
 
     callbacks = (
@@ -133,6 +144,7 @@ if __name__ == "__main__":
         if model_architecture == "vae"
         else [checkpoint_callback, lr_monitor]
     )
+    # mp.set_start_method('spawn')
     trainer = Trainer(
         accelerator="gpu",
         max_epochs=30,
@@ -140,6 +152,7 @@ if __name__ == "__main__":
         callbacks=callbacks,
         logger=tensorboard_logger,
         gradient_clip_val=1.0,
+        # fast_dev_run=True
         # detect_anomaly=True,
         # track_grad_norm=int(sys.argv[3]), # set to 2 for l2 norm
     )  # overfit_batches=1)

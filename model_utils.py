@@ -740,4 +740,11 @@ def get_params(dataset):
             "hidden_layer_dims": [],
             "use_bias": False,
         },
+        "gene_exp_prediction_mlp": {
+            "input_feature_dim": 512,
+            "output_size": 978,
+            "hidden_layer_dims": [768],
+            "dropout_prob": 0.0,
+            "loss_weight_factor": 0.33,
+        },
     }

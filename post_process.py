@@ -1,5 +1,5 @@
 from dataset import MolerDataset, LincsDataset
-
+""" molecule_generation preprocess l1000_biaae/INPUT_DIR l1000_biaae/OUTPUT_DIR l1000_biaae/TRACE_DIR --motif_vocabulary_provided='/data/ongh0068/guacamol/trace_dir/metadata.pkl.gz' --using_lincs"""
 valid_dataset = LincsDataset(
     root="/data/ongh0068",
     raw_moler_trace_dataset_parent_folder="/data/ongh0068/l1000/l1000_biaae/TRACE_DIR",  # "/data/ongh0068/l1000/trace_playground",

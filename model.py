@@ -4,7 +4,6 @@ from pytorch_lightning import LightningModule
 from model_utils import GenericMLP, MoLeROutput, PropertyRegressionMLP
 from encoder import GraphEncoder, PartialGraphEncoder
 from rdkit.Chem import Draw
-from rdkit.Chem.Draw import IPythonConsole
 from rdkit import Chem
 from decoder import MLPDecoder
 import torch
@@ -868,11 +867,11 @@ class AbstractModel(LightningModule):
 
 
 class BaseModel(AbstractModel):
-    def __init__(self, params, dataset, using_lincs, num_train_batches=1, batch_size=1):
+    def __init__(self, params, dataset, using_lincs, include_predict_gene_exp_mlp = False, num_train_batches=1, batch_size=1):
         """Params is a nested dictionary with the relevant parameters."""
         super(BaseModel, self).__init__()
         self._init_params(params, dataset)
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore = ['dataset'])
         if "training_hyperparams" in params:
             self._training_hyperparams = params["training_hyperparams"]
         else:
@@ -920,10 +919,16 @@ class BaseModel(AbstractModel):
         ]
         # If using lincs gene expression
         self._using_lincs = using_lincs
+        self._include_predict_gene_exp_mlp = include_predict_gene_exp_mlp
         if self._using_lincs:
             self._gene_exp_condition_mlp = GenericMLP(
                 **self._params["gene_exp_condition_mlp"]
             )
+            if self._include_predict_gene_exp_mlp:
+                self._gene_exp_prediction_mlp = PropertyRegressionMLP(
+                    **self._params["gene_exp_prediction_mlp"]
+                )
+
 
     def _init_params(self, params, dataset):
         """
@@ -1117,6 +1122,13 @@ class BaseModel(AbstractModel):
         # sum up all the property prediction losses
         return sum([loss for loss in property_prediction_losses.values()])
 
+    def compute_gene_expression_prediction_loss(self, latent_representation, batch):
+        predictions = self._gene_exp_prediction_mlp(latent_representation)
+        gene_expression_prediction_loss = self._gene_exp_prediction_mlp.compute_loss(
+            predictions=predictions, labels=batch.gene_expressions
+        )
+        return gene_expression_prediction_loss
+
     def step(self, batch):
         moler_output = self._run_step(batch)
 
@@ -1128,6 +1140,14 @@ class BaseModel(AbstractModel):
             loss_metrics["property_prediction_loss"] = (
                 self._graph_property_pred_loss_weight
                 * self.compute_property_prediction_loss(
+                    latent_representation=moler_output.latent_representation,
+                    batch=batch,
+                )
+            )
+        if self._include_predict_gene_exp_mlp:
+            loss_metrics['gene_expression_prediction_loss'] = (
+                self._graph_property_pred_loss_weight
+                * self.compute_gene_expression_prediction_loss(
                     latent_representation=moler_output.latent_representation,
                     batch=batch,
                 )
