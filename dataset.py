@@ -915,7 +915,7 @@ class LincsDataset(MolerDataset):
                 ],
             )
 
-        if self._split == "train" and self._gen_step_drop_probability > 0:
+        if  "train" in self._split and self._gen_step_drop_probability > 0:
             unrolled = data.to_data_list()
             selected_idx = np.arange(len(unrolled))[
                 np.random.rand(len(unrolled)) > self._gen_step_drop_probability
