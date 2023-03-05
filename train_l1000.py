@@ -22,10 +22,22 @@ if __name__ == "__main__":
     NUM_WORKERS = 4
     train_split1 = "train_0"
     valid_split = "valid_0"
+    parser = argparse.ArgumentParser()
+    """
+    python train_l1000.py --layer_type=FiLMConv --model_architecture=aae --use_oclr_scheduler=False --using_cyclical_anneal=False
+    """
+    parser.add_argument("--layer_type", required  = True, type = str, choices= ['FiLMConv', 'GATConv', 'GCNConv'])
+    parser.add_argument("--model_architecture", required  = True, type = str, choices = ['aae', 'vae'])
+    parser.add_argument("--use_oclr_scheduler", required  = True, type = bool)
+    parser.add_argument("--using_cyclical_anneal", required  = True, type = bool)
+    parser.add_argument("--gradient_clip_val", required  = True, type = float, default = 1.0) 
+    parser.add_argument("--max_lr", required  = True, type = float, default = 1e-5) 
+    parser.add_argument("--gen_step_drop_probability", required = True, type = float, default =0.5)
+    args = parser.parse_args()
 
     raw_moler_trace_dataset_parent_folder = "/data/ongh0068/guacamol/trace_dir"
     output_pyg_trace_dataset_parent_folder = (
-        "/data/ongh0068/l1000/l1000_biaae/already_batched"
+        "/data/ongh0068/l1000/already_batched"
     )
 
     train_dataset = LincsDataset(
@@ -36,6 +48,7 @@ if __name__ == "__main__":
         gene_exp_tumour_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/robust_normalized_tumors.npz",
         lincs_csv_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/experiments_filtered.csv",
         split=train_split1,
+        gen_step_drop_probability = args.gen_step_drop_probability
     )
 
     valid_dataset = LincsDataset(
@@ -89,10 +102,14 @@ if __name__ == "__main__":
 
     params = get_params(dataset=train_dataset)  # train_dataset)
     ###################################################
-    layer_type = sys.argv[1]  # change this
-    params["full_graph_encoder"]["layer_type"] = layer_type
-    params["partial_graph_encoder"]["layer_type"] = layer_type
-    # params['using_cyclical_anneal'] = True
+    
+    params["full_graph_encoder"]["layer_type"] = args.layer_type
+    params["partial_graph_encoder"]["layer_type"] = args.layer_type
+    params["use_oclr_scheduler"] = args.use_oclr_scheduler
+    params['using_cyclical_anneal'] = args.using_cyclical_anneal
+    model_architecture = args.model_architecture
+    params['max_lr']=args.max_lr
+    ###################################################
     model_architecture = sys.argv[2]  # expects aae, vae
     if model_architecture == "aae":
         model = AAE(
@@ -151,7 +168,7 @@ if __name__ == "__main__":
         devices=[2],
         callbacks=callbacks,
         logger=tensorboard_logger,
-        gradient_clip_val=1.0,
+        gradient_clip_val=args.gradient_clip_val,
         # fast_dev_run=True
         # detect_anomaly=True,
         # track_grad_norm=int(sys.argv[3]), # set to 2 for l2 norm

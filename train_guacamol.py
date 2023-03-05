@@ -9,12 +9,25 @@ from datetime import datetime
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
-import sys
+import argparse 
 
 if __name__ == "__main__":
 
     batch_size = 1
     NUM_WORKERS = 4
+    parser = argparse.ArgumentParser()
+    """
+    python train_guacamol.py --layer_type=FiLMConv --model_architecture=aae --use_oclr_scheduler=False --using_cyclical_anneal=False
+    """
+    parser.add_argument("--layer_type", required  = True, type = str, choices= ['FiLMConv', 'GATConv', 'GCNConv'])
+    parser.add_argument("--model_architecture", required  = True, type = str, choices = ['aae', 'vae'])
+    parser.add_argument("--use_oclr_scheduler", required  = True, type = bool)
+    parser.add_argument("--using_cyclical_anneal", required  = True, type = bool)
+    parser.add_argument("--gradient_clip_val", required  = True, type = float, default = 1.0) 
+    parser.add_argument("--max_lr", required  = True, type = float, default = 1e-5) 
+    parser.add_argument("--gen_step_drop_probability", required = True, type = float, default =0.5)
+    args = parser.parse_args()
+
     train_split1 = "train_0"
     train_split2 = "train_1000"
     train_split3 = "train_2000"
@@ -26,25 +39,28 @@ if __name__ == "__main__":
     valid_split = "valid_0"
 
     raw_moler_trace_dataset_parent_folder = "/data/ongh0068/guacamol/trace_dir"
-    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/l1000/already_batched"
+    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/guacamol/already_batched"
 
     train_dataset1 = MolerDataset(
         root="/data/ongh0068",
         raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split1,
+        gen_step_drop_probability = args.gen_step_drop_probability
     )
     train_dataset2 = MolerDataset(
         root="/data/ongh0068",
         raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split2,
+        gen_step_drop_probability = args.gen_step_drop_probability
     )
     train_dataset3 = MolerDataset(
         root="/data/ongh0068",
         raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split3,
+        gen_step_drop_probability = args.gen_step_drop_probability
     )
 
     train_dataset4 = MolerDataset(
@@ -52,6 +68,7 @@ if __name__ == "__main__":
         raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split4,
+        gen_step_drop_probability = args.gen_step_drop_probability
     )
 
     train_dataset5 = MolerDataset(
@@ -59,18 +76,21 @@ if __name__ == "__main__":
         raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split5,
+        gen_step_drop_probability = args.gen_step_drop_probability
     )
     train_dataset6 = MolerDataset(
         root="/data/ongh0068",
         raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split6,
+        gen_step_drop_probability = args.gen_step_drop_probability
     )
     train_dataset7 = MolerDataset(
         root="/data/ongh0068",
         raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
         split=train_split7,
+        gen_step_drop_probability = args.gen_step_drop_probability
     )
     train_dataset = ConcatDataset(
         [
@@ -129,11 +149,15 @@ if __name__ == "__main__":
 
     params = get_params(dataset=train_dataset1)  # train_dataset)
     ###################################################
-    layer_type = sys.argv[1]  # change this
-    params["full_graph_encoder"]["layer_type"] = layer_type
-    params["partial_graph_encoder"]["layer_type"] = layer_type
-    # params['using_cyclical_anneal'] = True
-    model_architecture = sys.argv[2]  # expects aae, vae
+    
+    params["full_graph_encoder"]["layer_type"] = args.layer_type
+    params["partial_graph_encoder"]["layer_type"] = args.layer_type
+    params["use_oclr_scheduler"] = args.use_oclr_scheduler
+    params['using_cyclical_anneal'] = args.using_cyclical_anneal
+    model_architecture = args.model_architecture
+    params['max_lr']=args.max_lr
+    ###################################################
+
     if model_architecture == "aae":
         model = AAE(
             params,
@@ -190,7 +214,7 @@ if __name__ == "__main__":
         devices=[2],
         callbacks=callbacks,
         logger=tensorboard_logger,
-        gradient_clip_val=1.0,
+        gradient_clip_val=args.gradient_clip_val,
         # detect_anomaly=True,
         # track_grad_norm=int(sys.argv[3]), # set to 2 for l2 norm
     )  # overfit_batches=1)

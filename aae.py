@@ -459,7 +459,7 @@ class AAE(AbstractModel):
         )
         optimizer_discrim = torch.optim.Adam(
             self._discriminator.parameters(),
-            lr=self._training_hyperparams["max_lr"] / 10,
+            lr=self._training_hyperparams["max_lr"],
         )
         # optimizer = torch.optim.AdamW(
         #     self.parameters(),
