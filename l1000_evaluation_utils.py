@@ -7,17 +7,20 @@
 
 # Compute all possible gene expression difference vectors
 import itertools  
-from rdkit import DataStructs
+from rdkit import DataStructs, Chem
 from rdkit.Chem import MACCSkeys
 from rdkit.Chem import AllChem
 from rdkit.Chem.Fraggle.FraggleSim import GetFraggleSimilarity
+import numpy as np
+import torch 
+
 def generate_similar_molecules_with_gene_exp_diff(
     control_idx, 
     tumour_idx,
     dataset,
     model,
 ):
-    possible_pairs = np.array(list(itertools.product(sample_control_idx, sample_tumour_idx)))
+    possible_pairs = np.array(list(itertools.product(control_idx, tumour_idx)))
 
     control_idx_batched = possible_pairs[:, 0]
     tumour_idx_batched = possible_pairs[:, 1]
@@ -57,7 +60,6 @@ def generate_similar_molecules_with_gene_exp_diff(
 def compute_max_similarity(
     candidate_molecules, 
     reference_smile, 
-    method = 'fraggle',
     radius = 3,
     nBits = 1024
 ):
