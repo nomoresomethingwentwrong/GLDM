@@ -9,7 +9,8 @@ from datetime import datetime
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
-import sys
+from model_utils import transfer_trained_weights
+import argparse
 
 # import torch.multiprocessing as mp
 
@@ -24,21 +25,42 @@ if __name__ == "__main__":
     valid_split = "valid_0"
     parser = argparse.ArgumentParser()
     """
-    python train_l1000.py --layer_type=FiLMConv --model_architecture=aae --use_oclr_scheduler=False --using_cyclical_anneal=False
+    pretrained_ckpt can be None, in which case transfer learning won't be used.
+
+    python train_l1000.py \
+    --layer_type=FiLMConv \
+    --model_architecture=vae \
+    --use_oclr_scheduler=False \
+    --using_cyclical_anneal=False \
+    --gradient_clip_val=1.0 \
+    --max_lr=1e-4 \
+    --gen_step_drop_probability=0.5 \
+    --pretrained_ckpt=/data/ongh0068/l1000/2023-03-03_09_30_01.589479/epoch=12-val_loss=0.46.ckpt \
+    --pretrained_ckpt_model_type=vae \
     """
-    parser.add_argument("--layer_type", required  = True, type = str, choices= ['FiLMConv', 'GATConv', 'GCNConv'])
-    parser.add_argument("--model_architecture", required  = True, type = str, choices = ['aae', 'vae'])
-    parser.add_argument("--use_oclr_scheduler", required  = True, type = bool)
-    parser.add_argument("--using_cyclical_anneal", required  = True, type = bool)
-    parser.add_argument("--gradient_clip_val", required  = True, type = float, default = 1.0) 
-    parser.add_argument("--max_lr", required  = True, type = float, default = 1e-5) 
-    parser.add_argument("--gen_step_drop_probability", required = True, type = float, default =0.5)
+    parser.add_argument(
+        "--layer_type",
+        required=True,
+        type=str,
+        choices=["FiLMConv", "GATConv", "GCNConv"],
+    )
+    parser.add_argument(
+        "--model_architecture", required=True, type=str, choices=["aae", "vae"]
+    )
+    parser.add_argument("--use_oclr_scheduler", required=True, type=bool)
+    parser.add_argument("--using_cyclical_anneal", required=True, type=bool)
+    parser.add_argument("--gradient_clip_val", required=True, type=float, default=1.0)
+    parser.add_argument("--max_lr", required=True, type=float, default=1e-5)
+    parser.add_argument(
+        "--gen_step_drop_probability", required=True, type=float, default=0.5
+    )
+    parser.add_argument("--pretrained_ckpt", required=True, type=str)
+    parser.add_argument("--pretrained_ckpt_model_type", required=True, type=str)
+
     args = parser.parse_args()
 
     raw_moler_trace_dataset_parent_folder = "/data/ongh0068/guacamol/trace_dir"
-    output_pyg_trace_dataset_parent_folder = (
-        "/data/ongh0068/l1000/already_batched"
-    )
+    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/l1000/l1000_biaae/already_batched"
 
     train_dataset = LincsDataset(
         root="/data/ongh0068",
@@ -48,7 +70,7 @@ if __name__ == "__main__":
         gene_exp_tumour_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/robust_normalized_tumors.npz",
         lincs_csv_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/experiments_filtered.csv",
         split=train_split1,
-        gen_step_drop_probability = args.gen_step_drop_probability
+        gen_step_drop_probability=args.gen_step_drop_probability,
     )
 
     valid_dataset = LincsDataset(
@@ -102,15 +124,14 @@ if __name__ == "__main__":
 
     params = get_params(dataset=train_dataset)  # train_dataset)
     ###################################################
-    
     params["full_graph_encoder"]["layer_type"] = args.layer_type
     params["partial_graph_encoder"]["layer_type"] = args.layer_type
     params["use_oclr_scheduler"] = args.use_oclr_scheduler
-    params['using_cyclical_anneal'] = args.using_cyclical_anneal
+    params["using_cyclical_anneal"] = args.using_cyclical_anneal
     model_architecture = args.model_architecture
-    params['max_lr']=args.max_lr
+    params["max_lr"] = args.max_lr
     ###################################################
-    model_architecture = sys.argv[2]  # expects aae, vae
+
     if model_architecture == "aae":
         model = AAE(
             params,
@@ -129,6 +150,33 @@ if __name__ == "__main__":
         )  # train_dataset)
     else:
         raise ValueError
+
+    if args.pretrained_ckpt is not None:
+        print(f"Transfering weights from {args.pretrained_ckpt}...")
+        assert args.pretrained_ckpt_model_type is not None
+        if args.pretrained_ckpt_model_type == "vae":
+            pretrained_model = BaseModel.load_from_checkpoint(
+                args.pretrained_ckpt,
+                params = params,
+                dataset = valid_dataset,
+                using_lincs=False,
+                num_train_batches=len(train_dataloader),
+                batch_size=batch_size,
+            )
+        elif args.pretrained_ckpt_model_type == "aae":
+            pretrained_model = AAE.load_from_checkpoint(
+                args.pretrained_ckpt,
+                params = params,
+                dataset = valid_dataset,
+                using_lincs=False,
+                num_train_batches=len(train_dataloader),
+                batch_size=batch_size,
+            )
+        else:
+            raise ValueError
+        transfer_trained_weights(pretrained_model, model)
+        del pretrained_model
+        print("Done transfering weights")
     ###################################################
 
     # Get current time for folder path.

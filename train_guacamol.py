@@ -39,7 +39,7 @@ if __name__ == "__main__":
     valid_split = "valid_0"
 
     raw_moler_trace_dataset_parent_folder = "/data/ongh0068/guacamol/trace_dir"
-    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/guacamol/already_batched"
+    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/l1000/already_batched"
 
     train_dataset1 = MolerDataset(
         root="/data/ongh0068",
