@@ -466,30 +466,30 @@ class AAE(AbstractModel):
         #     lr=self._training_hyperparams["max_lr"],
         #     betas=(0.9, 0.999),
         # )
-        # if self._use_oclr_scheduler:
-        #     lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        #         optimizer=optimizer,
-        #         max_lr=self._training_hyperparams["max_lr"],
-        #         div_factor=self._training_hyperparams["div_factor"],
-        #         three_phase=self._training_hyperparams["three_phase"],
-        #         epochs=self.trainer.max_epochs,
-        #         # number of times step() is called by the scheduler per epoch
-        #         # take the number of batches // frequency of calling the scheduler
-        #         steps_per_epoch=self._num_train_batches // self.trainer.max_epochs,
-        #     )
+        if self._use_oclr_scheduler:
+            lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer=optimizer_gen,
+                max_lr=self._training_hyperparams["max_lr"],
+                div_factor=self._training_hyperparams["div_factor"],
+                three_phase=self._training_hyperparams["three_phase"],
+                epochs=self.trainer.max_epochs,
+                # number of times step() is called by the scheduler per epoch
+                # take the number of batches // frequency of calling the scheduler
+                steps_per_epoch=self._num_train_batches // self.trainer.max_epochs,
+            )
 
-        #     lr_scheduler_params = {}
-        #     lr_scheduler_params["scheduler"] = lr_scheduler
+            lr_scheduler_params = {}
+            lr_scheduler_params["scheduler"] = lr_scheduler
 
-        #     lr_scheduler_params["interval"] = "step"
-        #     frequency_of_lr_scheduler_step = self.trainer.max_epochs
-        #     lr_scheduler_params[
-        #         "frequency"
-        #     ] = frequency_of_lr_scheduler_step  # number of batches to wait before calling lr_scheduler.step()
+            lr_scheduler_params["interval"] = "step"
+            frequency_of_lr_scheduler_step = self.trainer.max_epochs
+            lr_scheduler_params[
+                "frequency"
+            ] = frequency_of_lr_scheduler_step  # number of batches to wait before calling lr_scheduler.step()
 
-        #     optimizer_dict = {}
-        #     optimizer_dict["optimizer"] = optimizer
-        #     optimizer_dict["lr_scheduler"] = lr_scheduler_params
-        #     return optimizer_dict
+            # optimizer_dict = {}
+            # optimizer_dict["optimizer"] = optimizer_gen
+            # optimizer_dict["lr_scheduler"] = lr_scheduler_params
+            return [optimizer_gen, optimizer_discrim], lr_scheduler_params
         # else:
         return [optimizer_gen, optimizer_discrim]
