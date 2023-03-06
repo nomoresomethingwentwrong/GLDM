@@ -17,14 +17,14 @@ if __name__ == "__main__":
     NUM_WORKERS = 4
     parser = argparse.ArgumentParser()
     """
-    python train_guacamol.py --layer_type=FiLMConv --model_architecture=aae --use_oclr_scheduler=False --using_cyclical_anneal=False
+    python train_guacamol.py --layer_type=FiLMConv --model_architecture=aae --use_oclr_scheduler=False --using_cyclical_anneal=False --gradient_clip_val=1.0 --max_lr=1e-4 --gen_step_drop_probability=0.5
     """
     parser.add_argument("--layer_type", required  = True, type = str, choices= ['FiLMConv', 'GATConv', 'GCNConv'])
     parser.add_argument("--model_architecture", required  = True, type = str, choices = ['aae', 'vae'])
     parser.add_argument("--use_oclr_scheduler", required  = True, type = bool)
     parser.add_argument("--using_cyclical_anneal", required  = True, type = bool)
     parser.add_argument("--gradient_clip_val", required  = True, type = float, default = 1.0) 
-    parser.add_argument("--max_lr", required  = True, type = float, default = 1e-5) 
+    parser.add_argument("--max_lr", required  = True, type = float, default = 1e-4) 
     parser.add_argument("--gen_step_drop_probability", required = True, type = float, default =0.5)
     args = parser.parse_args()
 
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     valid_split = "valid_0"
 
     raw_moler_trace_dataset_parent_folder = "/data/ongh0068/guacamol/trace_dir"
-    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/guacamol/already_batched"
+    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/l1000/already_batched"
 
     train_dataset1 = MolerDataset(
         root="/data/ongh0068",
