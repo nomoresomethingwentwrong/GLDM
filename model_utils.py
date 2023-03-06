@@ -748,3 +748,11 @@ def get_params(dataset):
             "loss_weight_factor": 0.33,
         },
     }
+
+def transfer_trained_weights(pretrained_model, model):
+    source_model = dict(pretrained_model.named_parameters())
+    target_model = dict(model.named_parameters())
+    parts = source_model.keys()
+    for part in parts:
+        if part in target_model:
+            target_model[part].data.copy_(source_model[part].data)  
