@@ -292,15 +292,18 @@ class AAE(AbstractModel):
         # this step only updates the generator parameters and leaves the discriminator
         # untouched during the weight update
         if optimizer_idx == 0:
-            predictions_real_latents = self.discriminator(
+            encoder_latents_predictions = self.discriminator(
                 moler_output.latent_representation
             )
             loss["adversarial_loss"] = self.discriminator.compute_loss(
-                predictions=predictions_real_latents,
+                predictions=encoder_latents_predictions,
                 labels=torch.ones_like(
-                    predictions_real_latents,
+                    encoder_latents_predictions,
                     device=self.full_graph_encoder._dummy_param.device,
-                ),
+                ), # trick discriminator to think that the output from the encoder was legit from normal distribution
+                # during backprop this will not update the discriminator but only update the encoder to produce
+                # examples that will better resemble a latent vector sampled from a normal distribution so that 
+                # the discriminator will output something closer to 1
             )  # recall that the discriminator predicts 1 for real and 0 for fake
 
             # reconstruction loss
@@ -331,37 +334,40 @@ class AAE(AbstractModel):
             )
         # here we only update the discriminator parameters and nothing else
         elif optimizer_idx == 1:
-            predictions_real_latents = self.discriminator(
+            encoder_latents_predictions = self.discriminator(
                 moler_output.latent_representation
             )
 
-            fake_latent_vectors = torch.randn_like(
+            actual_normal_distribution_latent_vectors = torch.randn_like(
                 moler_output.latent_representation,
                 device=self.full_graph_encoder._dummy_param.device,
             )
-            predictions_fake_latents = self.discriminator(fake_latent_vectors)
+            actual_normal_distribution_latents_predictions = self.discriminator(actual_normal_distribution_latent_vectors)
             loss["adversarial_loss"] = self.discriminator.compute_loss(
                 predictions=torch.cat(
                     (
-                        predictions_real_latents,
-                        predictions_fake_latents,
+                        encoder_latents_predictions,
+                        actual_normal_distribution_latents_predictions,
                     ),
                     dim=0,
                 ),  # concat along batch dim
                 labels=torch.cat(
                     (
-                        torch.ones_like(
-                            predictions_real_latents,
+                        torch.zeros_like(
+                            encoder_latents_predictions,
                             device=self.full_graph_encoder._dummy_param.device,
                         ),
-                        torch.zeros_like(
-                            predictions_fake_latents,
+                        torch.ones_like(
+                            actual_normal_distribution_latents_predictions,
                             device=self.full_graph_encoder._dummy_param.device,
                         ),
                     ),
-                    dim=0,
+                    dim=0, 
                 ),  # recall that the discriminator predicts 1 for real and 0 for fake
             )
+            # here we want the discriminator to be actually be able to tell that the random vectors sampled from a 
+            # normal distribution are real (1) and we also want it to be able to tell that the encoder latents are 
+            # not actually from a normal distibution and hence fake (0)
         return loss
 
     def compute_property_prediction_loss(self, latent_representation, batch):
