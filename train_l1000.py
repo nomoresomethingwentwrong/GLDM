@@ -30,8 +30,8 @@ if __name__ == "__main__":
     python train_l1000.py \
     --layer_type=FiLMConv \
     --model_architecture=vae \
-    --use_oclr_scheduler=False \
-    --using_cyclical_anneal=False \
+    --use_oclr_scheduler \
+    --using_cyclical_anneal \
     --gradient_clip_val=1.0 \
     --max_lr=1e-4 \
     --gen_step_drop_probability=0.5 \
@@ -47,8 +47,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_architecture", required=True, type=str, choices=["aae", "vae"]
     )
-    parser.add_argument("--use_oclr_scheduler", required=True, type=bool)
-    parser.add_argument("--using_cyclical_anneal", required=True, type=bool)
+    parser.add_argument("--use_oclr_scheduler", action="store_true")
+    parser.add_argument("--using_cyclical_anneal", action="store_true")
+    parser.add_argument("--using_wasserstein_loss", action="store_true")
+    parser.add_argument("--using_gp", action="store_true")
     parser.add_argument("--gradient_clip_val", required=True, type=float, default=1.0)
     parser.add_argument("--max_lr", required=True, type=float, default=1e-5)
     parser.add_argument(
@@ -60,7 +62,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     raw_moler_trace_dataset_parent_folder = "/data/ongh0068/guacamol/trace_dir"
-    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/l1000/l1000_biaae/already_batched"
+    output_pyg_trace_dataset_parent_folder = (
+        "/data/ongh0068/l1000/l1000_biaae/already_batched"
+    )
 
     train_dataset = LincsDataset(
         root="/data/ongh0068",
@@ -157,8 +161,8 @@ if __name__ == "__main__":
         if args.pretrained_ckpt_model_type == "vae":
             pretrained_model = BaseModel.load_from_checkpoint(
                 args.pretrained_ckpt,
-                params = params,
-                dataset = valid_dataset,
+                params=params,
+                dataset=valid_dataset,
                 using_lincs=False,
                 num_train_batches=len(train_dataloader),
                 batch_size=batch_size,
@@ -166,8 +170,8 @@ if __name__ == "__main__":
         elif args.pretrained_ckpt_model_type == "aae":
             pretrained_model = AAE.load_from_checkpoint(
                 args.pretrained_ckpt,
-                params = params,
-                dataset = valid_dataset,
+                params=params,
+                dataset=valid_dataset,
                 using_lincs=False,
                 num_train_batches=len(train_dataloader),
                 batch_size=batch_size,
