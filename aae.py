@@ -3,6 +3,9 @@ from model_utils import GenericMLP, MoLeROutput, PropertyRegressionMLP, Discrimi
 from encoder import GraphEncoder, PartialGraphEncoder
 from decoder import MLPDecoder
 import torch
+from rdkit import Chem
+from rdkit.Chem import Draw
+from torchvision import transforms
 
 """
 1. Clone the conda env moler-env => try to pip install fcd
@@ -19,12 +22,45 @@ https://github.com/ebartrum/lightning_gan_zoo/blob/main/core/lightning_module.py
 # https://github.com/P2333/Bag-of-Tricks-for-AT
 # https://github.com/nocotan/pytorch-lightning-gans/blob/master/models/wgan.py
 # https://github.com/bfarzin/pytorch_aae/blob/master/main_aae.py
+
+
+def compute_gp(netD, real_data, fake_data):
+    batch_size = real_data.size(0)
+    # Sample Epsilon from uniform distribution
+    eps = torch.rand(batch_size, 1).to(real_data.device)
+    eps = eps.expand_as(real_data)
+
+    # Interpolation between real data and fake data.
+    interpolation = eps * real_data + (1 - eps) * fake_data
+
+    # get logits for interpolated images
+    interp_logits = netD(interpolation)
+    grad_outputs = torch.ones_like(interp_logits)
+
+    # Compute Gradients
+    gradients = torch.autograd.grad(
+        outputs=interp_logits,
+        inputs=interpolation,
+        grad_outputs=grad_outputs,
+        create_graph=True,
+        retain_graph=True,
+    )[0]
+
+    # Compute and return Gradient Norm
+    gradients = gradients.view(batch_size, -1)
+    grad_norm = gradients.norm(2, 1)
+    return torch.mean((grad_norm - 1) ** 2)
+
+
 class AAE(AbstractModel):
     def __init__(
         self,
         params,
         dataset,
         using_lincs,
+        using_wasserstein_loss,
+        using_gp,
+        gp_lambda=10,
         include_predict_gene_exp_mlp=False,
         num_train_batches=1,
         batch_size=1,
@@ -89,7 +125,13 @@ class AAE(AbstractModel):
             ]
         )
         # Discriminator
-        self._discriminator = DiscriminatorMLP(**self._params["discriminator"])
+        self._using_wasserstein_loss = using_wasserstein_loss
+        self._using_gp = using_gp
+        if self._using_gp:
+            self._gp_lambda = gp_lambda
+        self._discriminator = DiscriminatorMLP(
+            **self._params["discriminator"],
+        )
 
         # If using lincs gene expression
         self._using_lincs = using_lincs
@@ -295,16 +337,21 @@ class AAE(AbstractModel):
             encoder_latents_predictions = self.discriminator(
                 moler_output.latent_representation
             )
-            loss["adversarial_loss"] = self.discriminator.compute_loss(
-                predictions=encoder_latents_predictions,
-                labels=torch.ones_like(
-                    encoder_latents_predictions,
-                    device=self.full_graph_encoder._dummy_param.device,
-                ), # trick discriminator to think that the output from the encoder was legit from normal distribution
-                # during backprop this will not update the discriminator but only update the encoder to produce
-                # examples that will better resemble a latent vector sampled from a normal distribution so that 
-                # the discriminator will output something closer to 1
-            )  # recall that the discriminator predicts 1 for real and 0 for fake
+            if self._using_wasserstein_loss:
+                # here we want the generator to fool the discriminator => we want it to produce examples that
+                # decrease this loss
+                loss["adversarial_loss"] = -torch.mean(encoder_latents_predictions)
+            else:
+                loss["adversarial_loss"] = self.discriminator.compute_loss(
+                    predictions=encoder_latents_predictions,
+                    labels=torch.ones_like(
+                        encoder_latents_predictions,
+                        device=self.full_graph_encoder._dummy_param.device,
+                    ),  # trick discriminator to think that the output from the encoder was legit from normal distribution
+                    # during backprop this will not update the discriminator but only update the encoder to produce
+                    # examples that will better resemble a latent vector sampled from a normal distribution so that
+                    # the discriminator will output something closer to 1
+                )  # recall that the discriminator predicts 1 for real and 0 for fake
 
             # reconstruction loss
             loss["decoder_loss"] = self.decoder.compute_decoder_loss(
@@ -342,31 +389,46 @@ class AAE(AbstractModel):
                 moler_output.latent_representation,
                 device=self.full_graph_encoder._dummy_param.device,
             )
-            actual_normal_distribution_latents_predictions = self.discriminator(actual_normal_distribution_latent_vectors)
-            loss["adversarial_loss"] = self.discriminator.compute_loss(
-                predictions=torch.cat(
-                    (
-                        encoder_latents_predictions,
-                        actual_normal_distribution_latents_predictions,
-                    ),
-                    dim=0,
-                ),  # concat along batch dim
-                labels=torch.cat(
-                    (
-                        torch.zeros_like(
-                            encoder_latents_predictions,
-                            device=self.full_graph_encoder._dummy_param.device,
-                        ),
-                        torch.ones_like(
-                            actual_normal_distribution_latents_predictions,
-                            device=self.full_graph_encoder._dummy_param.device,
-                        ),
-                    ),
-                    dim=0, 
-                ),  # recall that the discriminator predicts 1 for real and 0 for fake
+            actual_normal_distribution_latents_predictions = self.discriminator(
+                actual_normal_distribution_latent_vectors
             )
-            # here we want the discriminator to be actually be able to tell that the random vectors sampled from a 
-            # normal distribution are real (1) and we also want it to be able to tell that the encoder latents are 
+            if self._using_wasserstein_loss:
+                # to decrease this loss, the discriminator needs to rank actual_normal_distribution_latents_predictions higher and
+                # rank encoder_latents_predictions lower
+                loss["adversarial_loss"] = torch.mean(
+                    encoder_latents_predictions
+                ) - torch.mean(actual_normal_distribution_latents_predictions)
+                if self._using_gp:
+                    loss["adversarial_loss"] += self._gp_lambda * compute_gp(
+                        self.discriminator,
+                        actual_normal_distribution_latent_vectors,
+                        encoder_latents_predictions,
+                    )
+            else:
+                loss["adversarial_loss"] = self.discriminator.compute_loss(
+                    predictions=torch.cat(
+                        (
+                            encoder_latents_predictions,
+                            actual_normal_distribution_latents_predictions,
+                        ),
+                        dim=0,
+                    ),  # concat along batch dim
+                    labels=torch.cat(
+                        (
+                            torch.zeros_like(
+                                encoder_latents_predictions,
+                                device=self.full_graph_encoder._dummy_param.device,
+                            ),
+                            torch.ones_like(
+                                actual_normal_distribution_latents_predictions,
+                                device=self.full_graph_encoder._dummy_param.device,
+                            ),
+                        ),
+                        dim=0,
+                    ),  # recall that the discriminator predicts 1 for real and 0 for fake
+                )
+            # here we want the discriminator to be actually be able to tell that the random vectors sampled from a
+            # normal distribution are real (1) and we also want it to be able to tell that the encoder latents are
             # not actually from a normal distibution and hence fake (0)
         return loss
 
@@ -412,7 +474,7 @@ class AAE(AbstractModel):
                 )
             )
         if self._include_predict_gene_exp_mlp:
-            loss_metrics['gene_expression_prediction_loss'] = (
+            loss_metrics["gene_expression_prediction_loss"] = (
                 self._graph_property_pred_loss_weight
                 * self.compute_gene_expression_prediction_loss(
                     latent_representation=moler_output.latent_representation,
@@ -499,3 +561,41 @@ class AAE(AbstractModel):
             return [optimizer_gen, optimizer_discrim], lr_scheduler_params
         # else:
         return [optimizer_gen, optimizer_discrim]
+
+    def train_epoch_end(self, outputs):
+        # decoder 50 random molecules using fixed random seed
+        if self._decode_on_validation_end:
+            if self.current_epoch < 3:
+                pass
+            else:
+                generator = torch.Generator(
+                    device=self.full_graph_encoder._dummy_param.device
+                ).manual_seed(0)
+                latent_vectors = torch.randn(
+                    size=(50, 512),
+                    generator=generator,
+                    device=self.full_graph_encoder._dummy_param.device,
+                )
+                decoder_states = self.decode(latent_representations=latent_vectors)
+                print(
+                    [
+                        Chem.MolToSmiles(decoder_states[i].molecule)
+                        for i in range(len(decoder_states))
+                    ]
+                )
+                try:
+                    pil_imgs = [
+                        Draw.MolToImage(decoder_states[i].molecule)
+                        for i in range(len(decoder_states))
+                    ]
+                    pil_img_tensors = [
+                        transforms.ToTensor()(pil_img).permute(1, 2, 0)
+                        for pil_img in pil_imgs
+                    ]
+
+                    for pil_img_tensor in pil_img_tensors:
+                        self.logger.experiment.add_image(
+                            "sample_molecules", pil_img_tensor, self.current_epoch
+                        )
+                except Exception as e:
+                    print(e)
