@@ -20,8 +20,6 @@ if __name__ == "__main__":
     python train_guacamol.py \
         --layer_type=FiLMConv \
         --model_architecture=aae \
-        --use_oclr_scheduler \
-        --using_cyclical_anneal \
         --gradient_clip_val=0.0 \
         --max_lr=1e-4 --gen_step_drop_probability=0.5 \
         --using_wasserstein_loss --using_gp
@@ -234,7 +232,7 @@ if __name__ == "__main__":
     trainer = Trainer(
         accelerator="gpu",
         max_epochs=30,
-        devices=[2],
+        devices=[3],
         callbacks=callbacks,
         logger=tensorboard_logger,
         gradient_clip_val=args.gradient_clip_val,
