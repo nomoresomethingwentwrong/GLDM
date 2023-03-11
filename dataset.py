@@ -966,5 +966,5 @@ class LincsDataset(MolerDataset):
         tumour_gene_exp = self._gene_exp_tumour[gene_exp_tumour_idx]
         diff_gene_exp = tumour_gene_exp - control_gene_exp
         data.gene_expressions = torch.from_numpy(diff_gene_exp).float()
-        data.dose = torch.from_numpy(self._experiment_idx_to_dose[experiment_idx])
+        data.dose = torch.from_numpy(self._experiment_idx_to_dose[experiment_idx]).float()
         return data
