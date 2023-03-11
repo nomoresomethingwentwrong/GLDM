@@ -68,7 +68,7 @@ class AAE(AbstractModel):
         """Params is a nested dictionary with the relevant parameters."""
         super(AAE, self).__init__()
         self._init_params(params, dataset)
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore = ['dataset'])
         if "training_hyperparams" in params:
             self._training_hyperparams = params["training_hyperparams"]
         else:
@@ -210,7 +210,7 @@ class AAE(AbstractModel):
         Output dimensions is batch_size x latent_dim
         """
         return self._gene_exp_condition_mlp(
-            torch.cat((latent_representation, gene_expressions, dose), dim=-1)
+            torch.cat((latent_representation, gene_expressions, dose.unsqueeze(-1)), dim=-1)
         )
 
     def forward(self, batch):
