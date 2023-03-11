@@ -68,7 +68,7 @@ class AAE(AbstractModel):
         """Params is a nested dictionary with the relevant parameters."""
         super(AAE, self).__init__()
         self._init_params(params, dataset)
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore = ['dataset'])
         if "training_hyperparams" in params:
             self._training_hyperparams = params["training_hyperparams"]
         else:
@@ -203,14 +203,14 @@ class AAE(AbstractModel):
     #     z = q.rsample()
     #     return p, q, z
 
-    def condition_on_gene_expression(self, latent_representation, gene_expressions):
+    def condition_on_gene_expression(self, latent_representation, gene_expressions, dose):
         """
         Latent representation has size batch_size x latent_dim
         Gene expressions have size batch_size x 978
         Output dimensions is batch_size x latent_dim
         """
         return self._gene_exp_condition_mlp(
-            torch.cat((latent_representation, gene_expressions), dim=-1)
+            torch.cat((latent_representation, gene_expressions, dose.unsqueeze(-1)), dim=-1)
         )
 
     def forward(self, batch):
@@ -253,6 +253,7 @@ class AAE(AbstractModel):
             latent_representation = self.condition_on_gene_expression(
                 latent_representation=input_molecule_representations,
                 gene_expressions=batch.gene_expressions,
+                dose = batch.dose
             )  # currently maps to 512
         else:
             latent_representation = self.latent_repr_mlp(

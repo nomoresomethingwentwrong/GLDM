@@ -735,7 +735,7 @@ def get_params(dataset):
             "use_bias": False,
         },
         "gene_exp_condition_mlp": {
-            "input_feature_dim": 512 + 978,  # should be 832 + 978 for AAE
+            "input_feature_dim": 512 + 978 + 1,  # should be 832 + 978 + 1 for AAE; +1 is for the dosage
             "output_size": 512,
             "hidden_layer_dims": [],
             "use_bias": False,
@@ -753,6 +753,9 @@ def transfer_trained_weights(pretrained_model, model):
     source_model = dict(pretrained_model.named_parameters())
     target_model = dict(model.named_parameters())
     parts = source_model.keys()
+    transferred_layer_names = []
     for part in parts:
         if part in target_model:
+            transferred_layer_names.append(part)
             target_model[part].data.copy_(source_model[part].data)  
+    return transferred_layer_names
