@@ -976,7 +976,7 @@ class BaseModel(AbstractModel):
         Output dimensions is batch_size x latent_dim
         """
         return self._gene_exp_condition_mlp(
-            torch.cat((latent_representation, gene_expressions, dose), dim=-1)
+            torch.cat((latent_representation, gene_expressions, dose.unsqueeze(-1)), dim=-1)
         )
     
     def reparametrize(self, mu, log_var):
