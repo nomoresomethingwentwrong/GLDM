@@ -969,14 +969,14 @@ class BaseModel(AbstractModel):
         return mu, log_var, z
         # return p, q, z
 
-    def condition_on_gene_expression(self, latent_representation, gene_expressions):
+    def condition_on_gene_expression(self, latent_representation, gene_expressions, dose):
         """
         Latent representation has size batch_size x latent_dim
         Gene expressions have size batch_size x 978
         Output dimensions is batch_size x latent_dim
         """
         return self._gene_exp_condition_mlp(
-            torch.cat((latent_representation, gene_expressions), dim=-1)
+            torch.cat((latent_representation, gene_expressions, dose), dim=-1)
         )
     
     def reparametrize(self, mu, log_var):
@@ -1031,6 +1031,7 @@ class BaseModel(AbstractModel):
             latent_representation = self.condition_on_gene_expression(
                 latent_representation=latent_representation,
                 gene_expressions=batch.gene_expressions,
+                dose = batch.dose
             )
             
         # Forward pass through decoder
