@@ -37,6 +37,43 @@ if __name__ == "__main__":
     --gen_step_drop_probability=0.5 \
     --pretrained_ckpt=/data/ongh0068/l1000/2023-03-03_09_30_01.589479/epoch=12-val_loss=0.46.ckpt \
     --pretrained_ckpt_model_type=vae \
+    
+
+    # VAE: no oclr + no kl anneal + ? dropout?
+    python train_l1000.py \
+    --layer_type=FiLMConv \
+    --model_architecture=vae \
+    --gradient_clip_val=1.0 \
+    --max_lr=1e-4 \
+    --gen_step_drop_probability=0.0 \
+    --pretrained_ckpt=/data/ongh0068/l1000/2023-03-03_09_30_01.589479/epoch=12-val_loss=0.46.ckpt \
+    --pretrained_ckpt_model_type=vae 
+
+
+    # AAE: oclr + no gen step dropout
+    python train_l1000.py \
+    --layer_type=FiLMConv \
+    --model_architecture=aae \
+    --use_oclr_scheduler \
+    --gradient_clip_val=1.0 \
+    --max_lr=1e-4 \
+    --gen_step_drop_probability=0.0 \
+    --pretrained_ckpt=/data/ongh0068/l1000/2023-03-06_16_47_15.554929/epoch=11-train_loss=0.71.ckpt \
+    --pretrained_ckpt_model_type=aae 
+
+
+
+    # WAE: oclr + no gen step dropout
+    python train_l1000.py \
+    --layer_type=FiLMConv \
+    --model_architecture=aae \
+    --use_oclr_scheduler \
+    --gradient_clip_val=1.0 \
+    --max_lr=1e-4 \
+    --gen_step_drop_probability=0.0 \
+    --pretrained_ckpt=/data/ongh0068/l1000/2023-03-07_23_24_09.367132/epoch=05-train_loss=0.23.ckpt \
+    --pretrained_ckpt_model_type=aae --using_wasserstein_loss --using_gp
+
     """
     parser.add_argument(
         "--layer_type",
@@ -85,6 +122,7 @@ if __name__ == "__main__":
         gene_exp_tumour_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/robust_normalized_tumors.npz",
         lincs_csv_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/experiments_filtered.csv",
         split=valid_split,
+        gen_step_drop_probability=args.gen_step_drop_probability,
     )
 
     train_dataloader = DataLoader(
@@ -137,12 +175,15 @@ if __name__ == "__main__":
     ###################################################
 
     if model_architecture == "aae":
+        params["gene_exp_condition_mlp"]["input_feature_dim"] = 832 + 978 + 1
         model = AAE(
             params,
             valid_dataset,
             using_lincs=True,
             num_train_batches=len(train_dataloader),
             batch_size=batch_size,
+            using_wasserstein_loss=True if args.using_wasserstein_loss else False,
+            using_gp=True if args.using_gp else False,
         )
     elif model_architecture == "vae":
         model = BaseModel(
@@ -175,12 +216,14 @@ if __name__ == "__main__":
                 using_lincs=False,
                 num_train_batches=len(train_dataloader),
                 batch_size=batch_size,
+                using_wasserstein_loss=True if args.using_wasserstein_loss else False,
+                using_gp=True if args.using_gp else False,
             )
         else:
             raise ValueError
-        transfer_trained_weights(pretrained_model, model)
+        transferred_layer_names = transfer_trained_weights(pretrained_model, model)
         del pretrained_model
-        print("Done transfering weights")
+        print("Done transfering weights for layers: ", transferred_layer_names)
     ###################################################
 
     # Get current time for folder path.
@@ -217,7 +260,7 @@ if __name__ == "__main__":
     trainer = Trainer(
         accelerator="gpu",
         max_epochs=30,
-        devices=[2],
+        devices=[1],
         callbacks=callbacks,
         logger=tensorboard_logger,
         gradient_clip_val=args.gradient_clip_val,
