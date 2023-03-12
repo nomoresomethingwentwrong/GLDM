@@ -867,7 +867,7 @@ class AbstractModel(LightningModule):
 
 
 class BaseModel(AbstractModel):
-    def __init__(self, params, dataset, using_lincs, include_predict_gene_exp_mlp = False, num_train_batches=1, batch_size=1):
+    def __init__(self, params, dataset, using_lincs, include_predict_gene_exp_mlp = False, num_train_batches=1, batch_size=1, use_clamp_log_var = False):
         """Params is a nested dictionary with the relevant parameters."""
         super(BaseModel, self).__init__()
         self._init_params(params, dataset)
@@ -879,6 +879,7 @@ class BaseModel(AbstractModel):
         self._params = params
         self._num_train_batches = num_train_batches
         self._batch_size = batch_size
+        self._use_clamp_log_var = use_clamp_log_var
         self._use_oclr_scheduler = params["use_oclr_scheduler"]
         self._decode_on_validation_end = params["decode_on_validation_end"]
         self._using_cyclical_anneal = params["using_cyclical_anneal"]
@@ -1154,6 +1155,8 @@ class BaseModel(AbstractModel):
                 )
             )
         # print("log_var", torch.max(moler_output.log_var))
+        if self._use_clamp_log_var:
+            moler_output.log_var = torch.clamp(moler_output.log_var, min=-5, max=5)
         kld_summand = torch.square(moler_output.mu)
         +torch.exp(moler_output.log_var)
         -moler_output.log_var
