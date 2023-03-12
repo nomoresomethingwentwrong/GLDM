@@ -49,12 +49,21 @@ if __name__ == "__main__":
     --gen_step_drop_probability=0.0 \
     --use_clamp_log_var
 
-    # WAE: no oclr + no kl anneal 
+    # AAE: oclr 
     python train_l1000.py \
     --layer_type=FiLMConv \
-    --model_architecture=vae \
+    --model_architecture=aae \
     --gradient_clip_val=1.0 \
     --max_lr=1e-4 \
+    --gen_step_drop_probability=0.0
+    
+    # WAE: oclr  
+    python train_l1000.py \
+    --layer_type=FiLMConv \
+    --model_architecture=aae \
+    --gradient_clip_val=0.0 \
+    --max_lr=1e-4 \
+    --using_wasserstein_loss --using_gp \
     --gen_step_drop_probability=0.0
 
     ##### FROM SCRATCH 
