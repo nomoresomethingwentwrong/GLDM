@@ -82,8 +82,7 @@ if __name__ == "__main__":
         --output_fp=aae_no_oclr_genstep_drop_distribution_learning_results.json \
         --device='cuda:1'  
 
-        
-        
+    #########
     # Transfer Learning VAE oclr + kl anneal + vae 
     python distribution_learning.py  \
         --ckpt_file_path=/data/ongh0068/l1000/2023-03-06_11_35_00.377565/epoch=12-val_loss=0.05.ckpt \
@@ -92,15 +91,45 @@ if __name__ == "__main__":
         --using_lincs \
         --output_dir=distribution_learning_benchmark \
         --output_fp=tl_l1000_vae_no_oclr_distribution_learning_results.json
+    #########
+
+    # Transfer Learning VAE 
+    python distribution_learning.py  \
+        --ckpt_file_path=/data/ongh0068/l1000/2023-03-11_20_37_28.240239/epoch=05-val_loss=0.63.ckpt \
+        --layer_type=FiLMConv \
+        --model_type=vae \
+        --using_lincs \
+        --output_dir=distribution_learning_benchmark \
+        --output_fp=tl_l1000_vae_best_distribution_learning_results.json
+
+    # Transfer Learning VAE Lower learning rate
+    python distribution_learning.py  \
+        --ckpt_file_path=/data/ongh0068/l1000/2023-03-11_23_33_36.921147/epoch=07-val_loss=0.60.ckpt \
+        --layer_type=FiLMConv \
+        --model_type=vae \
+        --using_lincs \
+        --output_dir=distribution_learning_benchmark \
+        --output_fp=tl_l1000_vae_best_lower_lr_distribution_learning_results.json
+
+    # Transfer Learning WAE
+    python distribution_learning.py  \
+        --ckpt_file_path=/data/ongh0068/l1000/2023-03-11_20_54_14.382629/epoch=08-train_loss=-0.39.ckpt \
+        --layer_type=FiLMConv \
+        --model_type=aae \
+        --using_lincs \
+        --using_wasserstein_loss --using_gp \
+        --output_dir=distribution_learning_benchmark \
+        --output_fp=tl_l1000_wae_best_distribution_learning_results.json
 
 
-
-
-
-
-
-
-    # 
+    # Transfer Learning AAE
+    python distribution_learning.py  \
+        --ckpt_file_path=/data/ongh0068/l1000/2023-03-11_20_54_15.863102/epoch=20-train_loss=0.00.ckpt \
+        --layer_type=FiLMConv \
+        --model_type=aae \
+        --using_lincs \
+        --output_dir=distribution_learning_benchmark \
+        --output_fp=tl_l1000_aae_best_distribution_learning_results.json
 
     
 
