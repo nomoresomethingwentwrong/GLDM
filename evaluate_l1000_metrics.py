@@ -29,8 +29,8 @@ def generate_similar_molecules_with_gene_exp_diff(
     original_idx,
     dataset,
     model,
-    num_samples=100,
-    device="cuda:0",
+    num_samples=20,
+    device="cuda:2",
 ):
     model = model.to(device=device)
     possible_pairs = np.array(list(itertools.product(control_idx, tumour_idx)))
@@ -96,6 +96,82 @@ def generate_similar_molecules_with_gene_exp_diff(
     return molecules
 
 
+def create_tensors_gene_exp_diff(
+    control_idx,
+    tumour_idx,
+    original_idx,
+    dataset,
+    num_samples=20,
+):
+    possible_pairs = np.array(list(itertools.product(control_idx, tumour_idx)))
+
+    control_idx_batched = possible_pairs[:, 0]
+    tumour_idx_batched = possible_pairs[:, 1]
+
+    control_gene_exp_batched = dataset._gene_exp_controls[control_idx_batched]
+    tumour_gene_exp_batched = dataset._gene_exp_tumour[tumour_idx_batched]
+    difference_gene_exp_batched = tumour_gene_exp_batched - control_gene_exp_batched
+
+    # Create num_samples//num_diff_vectors random vectors
+    if num_samples > difference_gene_exp_batched.shape[0]:
+        num_rand_vectors_required = num_samples // difference_gene_exp_batched.shape[0]
+        random_vectors = torch.randn(num_rand_vectors_required, 512)
+        # repeat each gene expression difference vector in its place a number of times
+        # equal to the number of random vectors using repeat_interleave
+        # then repeat the random vectors batchwise so that we can align the random vectors
+        # with the gene expression differences
+        # Eg given 114 gene expression diff vectors, we will have 8 random vectors
+        # then for each gene expresison vector, we want to match it with each of the
+        # 8 random vectors individually
+        difference_gene_exp_batched = torch.tensor(difference_gene_exp_batched)
+        difference_gene_exp_batched = torch.repeat_interleave(
+            difference_gene_exp_batched, num_rand_vectors_required, dim=0
+        )
+        random_vectors = random_vectors.repeat(possible_pairs.shape[0], 1)
+
+    else:
+        num_rand_vectors_required = num_samples
+        # since number of samples is less than the number of gene expressions
+        # we need to truncate the gene expressions too
+        difference_gene_exp_batched = torch.tensor(
+            difference_gene_exp_batched[:num_samples, :]
+        )
+        random_vectors = torch.randn(num_rand_vectors_required, 512)
+
+    dose_batched = torch.from_numpy(
+        np.repeat(
+            dataset._experiment_idx_to_dose[original_idx], (random_vectors.shape[0])
+        )
+    ).float()
+
+    return random_vectors, difference_gene_exp_batched, dose_batched, original_idx
+
+
+class GeneExpDataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        list_of_random_vectors,
+        list_of_difference_gene_exp_batched,
+        list_of_dose_batched,
+        list_of_original_idxes,
+    ):
+        self.list_of_random_vectors = list_of_random_vectors
+        self.list_of_difference_gene_exp_batched = list_of_difference_gene_exp_batched
+        self.list_of_dose_batched = list_of_dose_batched
+        self.list_of_original_idxes = list_of_original_idxes
+
+    def __len__(self):
+        return len(self.original_idxes)
+
+    def __get_item__(self, idx):
+        return (
+            self.list_of_random_vectors[idx],
+            self.list_of_difference_gene_exp_batched[idx],
+            self.list_of_dose_batched[idx],
+            self.list_of_original_idxes[idx],
+        )
+
+
 def sanitise(row):
     """Specifically for the L1000 csv"""
     control_indices = (
@@ -140,6 +216,7 @@ original_idxes = test_set.original_idx.to_list()
 
 
 ######################## VAE ##########################
+print("evaluating vae")
 vae_lower_lr = (
     "/data/ongh0068/l1000/2023-03-11_23_33_36.921147/epoch=07-val_loss=0.60.ckpt"
 )
@@ -151,46 +228,66 @@ pretrained_model = BaseModel.load_from_checkpoint(
 
 results = {}
 
+# collect tensors into lists and then instantiate dataset
 for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
     zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
 ):
-    candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
-        control_idx,
-        tumour_idx,
-        original_idx,
-        dataset,
-        pretrained_model,
-        num_samples=100,
-    )
-    results["_".join([reference_smile, str(original_idx)])] = {}
-    results["_".join([reference_smile, str(original_idx)])]["generated_smiles"] = [
-        Chem.MolToSmiles(mol) for mol in candidate_molecules
-    ]
-    sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
-    results["_".join([reference_smile, str(original_idx)])]["sa_scores"] = sa_scores
+    print("evaluating vae ", original_idx)
+    try:
+        candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
+            control_idx,
+            tumour_idx,
+            original_idx,
+            dataset,
+            pretrained_model,
+            num_samples=20,
+        )
+        results["_".join([reference_smile, str(original_idx)])] = {}
+        results["_".join([reference_smile, str(original_idx)])]["generated_smiles"] = [
+            Chem.MolToSmiles(mol) for mol in candidate_molecules
+        ]
+        sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
+        results["_".join([reference_smile, str(original_idx)])]["sa_scores"] = sa_scores
+    except Exception as e:
+        print(e)
+
+# create dataloader
 
 
-with open("tl_vae_generated_molecules_and_sa_scores.pkl", "wb") as f:
+# iterate through dataloader, decode, and keep track of original idx to
+# molecules
+
+
+# move model to cpu and delete it
+
+
+with open("tl_vae_generated_molecules_and_sa_scores2.pkl", "wb") as f:
     pickle.dump(results, f)
 
 generated_mol_sims = {}
-for reference_smile_original_idx in results:
-    reference_smile = reference_smile.rsplit("_", 1)[0]
-    max_sim = compute_max_similarity(
-        candidate_molecules=[
-            Chem.MolFromSmiles(smile)
-            for smile in results[reference_smile_original_idx]["generated_smiles"]
-        ],
-        reference_smile=reference_smile,
-    )
-    generated_mol_sims[reference_smile_original_idx] = max_sim
-with open("tl_vae_test_set_smile_to_max_sim_generated_molecule.pkl", "wb") as f:
+for reference_smile_original_idx in tqdm(results):
+    try:
+        reference_smile = reference_smile.rsplit("_", 1)[0]
+        max_sim = compute_max_similarity(
+            candidate_molecules=[
+                Chem.MolFromSmiles(smile)
+                for smile in results[reference_smile_original_idx]["generated_smiles"]
+            ],
+            reference_smile=reference_smile,
+        )
+        generated_mol_sims[reference_smile_original_idx] = max_sim
+
+    except Exception as e:
+        print(e)
+
+with open("tl_vae_test_set_smile_to_max_sim_generated_molecule2.pkl", "wb") as f:
     pickle.dump(generated_mol_sims, f)
+print("done with vae")
 ######################## VAE ##########################
 
 
 ######################## AAE ##########################
-
+print("evaluating aae")
 aae_lower_lr = (
     "/data/ongh0068/l1000/2023-03-11_20_54_15.863102/epoch=20-train_loss=0.00.ckpt"
 )
@@ -211,45 +308,52 @@ results = {}
 for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
     zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
 ):
-    candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
-        control_idx,
-        tumour_idx,
-        original_idx,
-        dataset,
-        pretrained_model,
-        num_samples=100,
-    )
-    results["_".join([reference_smile, str(original_idx)])] = {}
-    results["_".join([reference_smile, str(original_idx)])]["generated_smiles"] = [
-        Chem.MolToSmiles(mol) for mol in candidate_molecules
-    ]
-    sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
-    results["_".join([reference_smile, str(original_idx)])]["sa_scores"] = sa_scores
+    print("evaluating aae ", original_idx)
+    try:
+        candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
+            control_idx,
+            tumour_idx,
+            original_idx,
+            dataset,
+            pretrained_model,
+            num_samples=20,
+        )
+        results["_".join([reference_smile, str(original_idx)])] = {}
+        results["_".join([reference_smile, str(original_idx)])]["generated_smiles"] = [
+            Chem.MolToSmiles(mol) for mol in candidate_molecules
+        ]
+        sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
+        results["_".join([reference_smile, str(original_idx)])]["sa_scores"] = sa_scores
+    except Exception as e:
+        print(e)
 
-
-
-with open("tl_aae_generated_molecules_and_sa_scores.pkl", "wb") as f:
+with open("tl_aae_generated_molecules_and_sa_scores2.pkl", "wb") as f:
     pickle.dump(results, f)
 
 generated_mol_sims = {}
-for reference_smile_original_idx in results:
-    reference_smile = reference_smile.rsplit("_", 1)[0]
-    max_sim = compute_max_similarity(
-        candidate_molecules=[
-            Chem.MolFromSmiles(smile)
-            for smile in results[reference_smile_original_idx]["generated_smiles"]
-        ],
-        reference_smile=reference_smile,
-    )
-    generated_mol_sims[reference_smile_original_idx] = max_sim
-with open("tl_aae_test_set_smile_to_max_sim_generated_molecule.pkl", "wb") as f:
+for reference_smile_original_idx in tqdm(results):
+    try:
+        reference_smile = reference_smile.rsplit("_", 1)[0]
+        max_sim = compute_max_similarity(
+            candidate_molecules=[
+                Chem.MolFromSmiles(smile)
+                for smile in results[reference_smile_original_idx]["generated_smiles"]
+            ],
+            reference_smile=reference_smile,
+        )
+        generated_mol_sims[reference_smile_original_idx] = max_sim
+
+    except Exception as e:
+        print(e)
+with open("tl_aae_test_set_smile_to_max_sim_generated_molecule2.pkl", "wb") as f:
     pickle.dump(generated_mol_sims, f)
 
+print("done with aae")
 ######################## AAE ##########################
 
 
 ######################## WAE ##########################
-
+print("evaluating wae")
 wae_lower_lr = (
     "/data/ongh0068/l1000/2023-03-11_20_54_14.382629/epoch=20-train_loss=-8.16.ckpt"
 )
@@ -270,39 +374,45 @@ results = {}
 for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
     zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
 ):
-    candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
-        control_idx,
-        tumour_idx,
-        original_idx,
-        dataset,
-        pretrained_model,
-        num_samples=100,
-    )
-    results["_".join([reference_smile, str(original_idx)])] = {}
-    results["_".join([reference_smile, str(original_idx)])]["generated_smiles"] = [
-        Chem.MolToSmiles(mol) for mol in candidate_molecules
-    ]
-    sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
-    results["_".join([reference_smile, str(original_idx)])]["sa_scores"] = sa_scores
+    print("evaluating wae ", original_idx)
+    try:
+        candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
+            control_idx,
+            tumour_idx,
+            original_idx,
+            dataset,
+            pretrained_model,
+            num_samples=20,
+        )
+        results["_".join([reference_smile, str(original_idx)])] = {}
+        results["_".join([reference_smile, str(original_idx)])]["generated_smiles"] = [
+            Chem.MolToSmiles(mol) for mol in candidate_molecules
+        ]
+        sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
+        results["_".join([reference_smile, str(original_idx)])]["sa_scores"] = sa_scores
+    except Exception as e:
+        print(e)
 
-
-
-with open("tl_wae_generated_molecules_and_sa_scores.pkl", "wb") as f:
+with open("tl_wae_generated_molecules_and_sa_scores2.pkl", "wb") as f:
     pickle.dump(results, f)
 
 generated_mol_sims = {}
-for reference_smile_original_idx in results:
-    reference_smile = reference_smile.rsplit("_", 1)[0]
-    max_sim = compute_max_similarity(
-        candidate_molecules=[
-            Chem.MolFromSmiles(smile)
-            for smile in results[reference_smile_original_idx]["generated_smiles"]
-        ],
-        reference_smile=reference_smile,
-    )
-    generated_mol_sims[reference_smile_original_idx] = max_sim
-with open("tl_wae_test_set_smile_to_max_sim_generated_molecule.pkl", "wb") as f:
+for reference_smile_original_idx in tqdm(results):
+    try:
+        reference_smile = reference_smile.rsplit("_", 1)[0]
+        max_sim = compute_max_similarity(
+            candidate_molecules=[
+                Chem.MolFromSmiles(smile)
+                for smile in results[reference_smile_original_idx]["generated_smiles"]
+            ],
+            reference_smile=reference_smile,
+        )
+        generated_mol_sims[reference_smile_original_idx] = max_sim
+    except Exception as e:
+        print(e)
+with open("tl_wae_test_set_smile_to_max_sim_generated_molecule2.pkl", "wb") as f:
     pickle.dump(generated_mol_sims, f)
 
+print("done with wae")
 
 ######################## WAE ##########################
