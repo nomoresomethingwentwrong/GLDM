@@ -131,8 +131,37 @@ if __name__ == "__main__":
         --output_dir=distribution_learning_benchmark \
         --output_fp=tl_l1000_aae_best_distribution_learning_results.json
 
-    
+    #########
+    # From scratch VAE
+    python distribution_learning.py  \
+        --ckpt_file_path=/data/ongh0068/l1000/2023-03-12_09_11_28.620305/epoch=13-val_loss=2.20.ckpt \
+        --layer_type=FiLMConv \
+        --model_type=vae \
+        --using_lincs \
+        --output_dir=distribution_learning_benchmark \
+        --output_fp=fs_l1000_vae_best_distribution_learning_results.json \
+        --device='cuda:2'  
 
+    # From scratch AAE
+    python distribution_learning.py  \
+        --ckpt_file_path=/data/ongh0068/l1000/2023-03-12_20_21_22.759623/epoch=08-train_loss=0.00.ckpt \
+        --layer_type=FiLMConv \
+        --model_type=aae \
+        --using_lincs \
+        --output_dir=distribution_learning_benchmark \
+        --output_fp=fs_l1000_aae_best_distribution_learning_results.json \
+        --device='cuda:0'  
+    
+    # From scratch WAE
+    python distribution_learning.py  \
+        --ckpt_file_path=/data/ongh0068/l1000/2023-03-12_20_16_24.275625/epoch=29-train_loss=-8.20.ckpt \
+        --layer_type=FiLMConv \
+        --model_type=aae \
+        --using_lincs \
+        --using_wasserstein_loss --using_gp \
+        --output_dir=distribution_learning_benchmark \
+        --output_fp=fs_l1000_wae_best_distribution_learning_results.json \
+        --device='cuda:0'  
     """
     parser = argparse.ArgumentParser(
         description="Molecule distribution learning benchmark for random smiles sampler",
