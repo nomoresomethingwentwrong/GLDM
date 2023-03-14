@@ -11,6 +11,7 @@ import pandas as pd
 from rdkit import RDLogger
 import pickle
 from l1000_evaluation_utils import compute_max_similarity
+import argparse
 
 lg = RDLogger.logger()
 
@@ -29,8 +30,9 @@ def generate_similar_molecules_with_gene_exp_diff(
     original_idx,
     dataset,
     model,
+    rand_vect_dim=512,
     num_samples=20,
-    device="cuda:2",
+    device="cuda:0",
 ):
     model = model.to(device=device)
     possible_pairs = np.array(list(itertools.product(control_idx, tumour_idx)))
@@ -45,7 +47,9 @@ def generate_similar_molecules_with_gene_exp_diff(
     # Create num_samples//num_diff_vectors random vectors
     if num_samples > difference_gene_exp_batched.shape[0]:
         num_rand_vectors_required = num_samples // difference_gene_exp_batched.shape[0]
-        random_vectors = torch.randn(num_rand_vectors_required, 512, device=device)
+        random_vectors = torch.randn(
+            num_rand_vectors_required, rand_vect_dim, device=device
+        )
         # repeat each gene expression difference vector in its place a number of times
         # equal to the number of random vectors using repeat_interleave
         # then repeat the random vectors batchwise so that we can align the random vectors
@@ -68,7 +72,9 @@ def generate_similar_molecules_with_gene_exp_diff(
         difference_gene_exp_batched = torch.tensor(
             difference_gene_exp_batched[:num_samples, :], device=device
         )
-        random_vectors = torch.randn(num_rand_vectors_required, 512, device=device)
+        random_vectors = torch.randn(
+            num_rand_vectors_required, rand_vect_dim, device=device
+        )
 
     dose_batched = (
         torch.from_numpy(
@@ -214,205 +220,221 @@ control_idxes = test_set.ControlIndices.values
 tumour_idxes = test_set.TumourIndices.values
 original_idxes = test_set.original_idx.to_list()
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--model_type", type=str, choices=["vae", "aae", "wae"])
+args = parser.parse_args()
+if args.model_type == "vae":
+    ######################## VAE ##########################
+    print("evaluating vae fs")
+    vae_lower_lr = (
+        "/data/ongh0068/l1000/2023-03-12_09_11_28.620305/epoch=13-val_loss=2.20.ckpt"
+    )
 
-######################## VAE ##########################
-print("evaluating vae fs")
-vae_lower_lr = (
-    "/data/ongh0068/l1000/2023-03-12_09_11_28.620305/epoch=13-val_loss=2.20.ckpt"
-)
+    params = get_params(dataset)
+    pretrained_model = BaseModel.load_from_checkpoint(
+        vae_lower_lr, params=params, dataset=dataset, using_lincs=True
+    )
 
-params = get_params(dataset)
-pretrained_model = BaseModel.load_from_checkpoint(
-    vae_lower_lr, params=params, dataset=dataset, using_lincs=True
-)
+    results = {}
 
-results = {}
+    # collect tensors into lists and then instantiate dataset
+    for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
+        zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
+    ):
+        print("evaluating vae ", original_idx)
+        try:
+            candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
+                control_idx,
+                tumour_idx,
+                original_idx,
+                dataset,
+                pretrained_model,
+                rand_vect_dim=512,
+                num_samples=20,
+            )
+            results["_".join([reference_smile, str(original_idx)])] = {}
+            results["_".join([reference_smile, str(original_idx)])][
+                "generated_smiles"
+            ] = [Chem.MolToSmiles(mol) for mol in candidate_molecules]
+            sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
+            results["_".join([reference_smile, str(original_idx)])][
+                "sa_scores"
+            ] = sa_scores
+        except Exception as e:
+            print(e)
 
-# collect tensors into lists and then instantiate dataset
-for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
-    zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
-):
-    print("evaluating vae ", original_idx)
-    try:
-        candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
-            control_idx,
-            tumour_idx,
-            original_idx,
-            dataset,
-            pretrained_model,
-            num_samples=20,
-        )
-        results["_".join([reference_smile, str(original_idx)])] = {}
-        results["_".join([reference_smile, str(original_idx)])]["generated_smiles"] = [
-            Chem.MolToSmiles(mol) for mol in candidate_molecules
-        ]
-        sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
-        results["_".join([reference_smile, str(original_idx)])]["sa_scores"] = sa_scores
-    except Exception as e:
-        print(e)
+    # create dataloader
 
-# create dataloader
+    # iterate through dataloader, decode, and keep track of original idx to
+    # molecules
 
+    # move model to cpu and delete it
 
-# iterate through dataloader, decode, and keep track of original idx to
-# molecules
+    with open("fs_vae_generated_molecules_and_sa_scores.pkl", "wb") as f:
+        pickle.dump(results, f)
 
+    generated_mol_sims = {}
+    for reference_smile_original_idx in tqdm(results):
+        try:
+            reference_smile = reference_smile.rsplit("_", 1)[0]
+            max_sim = compute_max_similarity(
+                candidate_molecules=[
+                    Chem.MolFromSmiles(smile)
+                    for smile in results[reference_smile_original_idx][
+                        "generated_smiles"
+                    ]
+                ],
+                reference_smile=reference_smile,
+            )
+            generated_mol_sims[reference_smile_original_idx] = max_sim
 
-# move model to cpu and delete it
+        except Exception as e:
+            print(e)
 
+    with open("fs_vae_test_set_smile_to_max_sim_generated_molecule.pkl", "wb") as f:
+        pickle.dump(generated_mol_sims, f)
+    print("done with vae fs")
+    ######################## VAE ##########################
 
-with open("fs_vae_generated_molecules_and_sa_scores.pkl", "wb") as f:
-    pickle.dump(results, f)
+elif args.model_type == "aae":
 
-generated_mol_sims = {}
-for reference_smile_original_idx in tqdm(results):
-    try:
-        reference_smile = reference_smile.rsplit("_", 1)[0]
-        max_sim = compute_max_similarity(
-            candidate_molecules=[
-                Chem.MolFromSmiles(smile)
-                for smile in results[reference_smile_original_idx]["generated_smiles"]
-            ],
-            reference_smile=reference_smile,
-        )
-        generated_mol_sims[reference_smile_original_idx] = max_sim
+    ######################## AAE ##########################
+    print("evaluating aae fs")
+    aae_lower_lr = (
+        "/data/ongh0068/l1000/2023-03-12_20_21_22.759623/epoch=08-train_loss=0.00.ckpt"
+    )
 
-    except Exception as e:
-        print(e)
+    params = get_params(dataset)
+    params["gene_exp_condition_mlp"]["input_feature_dim"] = 832 + 978 + 1
+    pretrained_model = AAE.load_from_checkpoint(
+        aae_lower_lr,
+        params=params,
+        dataset=dataset,
+        using_lincs=True,
+        using_wasserstein_loss=False,
+        using_gp=False,
+    )
 
-with open("fs_vae_test_set_smile_to_max_sim_generated_molecule.pkl", "wb") as f:
-    pickle.dump(generated_mol_sims, f)
-print("done with vae fs")
-######################## VAE ##########################
+    results = {}
 
+    for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
+        zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
+    ):
+        print("evaluating aae fs", original_idx)
+        try:
+            candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
+                control_idx,
+                tumour_idx,
+                original_idx,
+                dataset,
+                pretrained_model,
+                rand_vect_dim=832,
+                num_samples=20,
+            )
+            results["_".join([reference_smile, str(original_idx)])] = {}
+            results["_".join([reference_smile, str(original_idx)])][
+                "generated_smiles"
+            ] = [Chem.MolToSmiles(mol) for mol in candidate_molecules]
+            sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
+            results["_".join([reference_smile, str(original_idx)])][
+                "sa_scores"
+            ] = sa_scores
+        except Exception as e:
+            print(e)
 
-######################## AAE ##########################
-print("evaluating aae fs")
-aae_lower_lr = (
-    "/data/ongh0068/l1000/2023-03-12_20_21_22.759623/epoch=08-train_loss=0.00.ckpt"
-)
+    with open("fs_aae_generated_molecules_and_sa_scores.pkl", "wb") as f:
+        pickle.dump(results, f)
 
-params = get_params(dataset)
-params["gene_exp_condition_mlp"]["input_feature_dim"] = 832 + 978 + 1
-pretrained_model = AAE.load_from_checkpoint(
-    aae_lower_lr,
-    params=params,
-    dataset=dataset,
-    using_lincs=True,
-    using_wasserstein_loss=False,
-    using_gp=False,
-)
+    generated_mol_sims = {}
+    for reference_smile_original_idx in tqdm(results):
+        try:
+            reference_smile = reference_smile.rsplit("_", 1)[0]
+            max_sim = compute_max_similarity(
+                candidate_molecules=[
+                    Chem.MolFromSmiles(smile)
+                    for smile in results[reference_smile_original_idx][
+                        "generated_smiles"
+                    ]
+                ],
+                reference_smile=reference_smile,
+            )
+            generated_mol_sims[reference_smile_original_idx] = max_sim
 
-results = {}
+        except Exception as e:
+            print(e)
+    with open("fs_aae_test_set_smile_to_max_sim_generated_molecule.pkl", "wb") as f:
+        pickle.dump(generated_mol_sims, f)
 
-for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
-    zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
-):
-    print("evaluating aae fs", original_idx)
-    try:
-        candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
-            control_idx,
-            tumour_idx,
-            original_idx,
-            dataset,
-            pretrained_model,
-            num_samples=20,
-        )
-        results["_".join([reference_smile, str(original_idx)])] = {}
-        results["_".join([reference_smile, str(original_idx)])]["generated_smiles"] = [
-            Chem.MolToSmiles(mol) for mol in candidate_molecules
-        ]
-        sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
-        results["_".join([reference_smile, str(original_idx)])]["sa_scores"] = sa_scores
-    except Exception as e:
-        print(e)
+    print("done with aae fs")
+    ######################## AAE ##########################
 
-with open("fs_aae_generated_molecules_and_sa_scores.pkl", "wb") as f:
-    pickle.dump(results, f)
+elif args.model_type == "wae":
+    ######################## WAE ##########################
+    print("evaluating wae fs")
+    wae_lower_lr = (
+        "/data/ongh0068/l1000/2023-03-12_20_16_24.275625/epoch=29-train_loss=-8.20.ckpt"
+    )
 
-generated_mol_sims = {}
-for reference_smile_original_idx in tqdm(results):
-    try:
-        reference_smile = reference_smile.rsplit("_", 1)[0]
-        max_sim = compute_max_similarity(
-            candidate_molecules=[
-                Chem.MolFromSmiles(smile)
-                for smile in results[reference_smile_original_idx]["generated_smiles"]
-            ],
-            reference_smile=reference_smile,
-        )
-        generated_mol_sims[reference_smile_original_idx] = max_sim
+    params = get_params(dataset)
+    params["gene_exp_condition_mlp"]["input_feature_dim"] = 832 + 978 + 1
+    pretrained_model = AAE.load_from_checkpoint(
+        wae_lower_lr,
+        params=params,
+        dataset=dataset,
+        using_lincs=True,
+        using_wasserstein_loss=True,
+        using_gp=True,
+    )
 
-    except Exception as e:
-        print(e)
-with open("fs_aae_test_set_smile_to_max_sim_generated_molecule.pkl", "wb") as f:
-    pickle.dump(generated_mol_sims, f)
+    results = {}
 
-print("done with aae fs")
-######################## AAE ##########################
+    for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
+        zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
+    ):
+        print("evaluating wae fs", original_idx)
+        try:
+            candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
+                control_idx,
+                tumour_idx,
+                original_idx,
+                dataset,
+                pretrained_model,
+                rand_vect_dim=832,
+                num_samples=20,
+            )
+            results["_".join([reference_smile, str(original_idx)])] = {}
+            results["_".join([reference_smile, str(original_idx)])][
+                "generated_smiles"
+            ] = [Chem.MolToSmiles(mol) for mol in candidate_molecules]
+            sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
+            results["_".join([reference_smile, str(original_idx)])][
+                "sa_scores"
+            ] = sa_scores
+        except Exception as e:
+            print(e)
 
+    with open("fs_wae_generated_molecules_and_sa_scores.pkl", "wb") as f:
+        pickle.dump(results, f)
 
-######################## WAE ##########################
-print("evaluating wae fs")
-wae_lower_lr = (
-    "/data/ongh0068/l1000/2023-03-12_20_16_24.275625/epoch=29-train_loss=-8.20.ckpt"
-)
+    generated_mol_sims = {}
+    for reference_smile_original_idx in tqdm(results):
+        try:
+            reference_smile = reference_smile.rsplit("_", 1)[0]
+            max_sim = compute_max_similarity(
+                candidate_molecules=[
+                    Chem.MolFromSmiles(smile)
+                    for smile in results[reference_smile_original_idx][
+                        "generated_smiles"
+                    ]
+                ],
+                reference_smile=reference_smile,
+            )
+            generated_mol_sims[reference_smile_original_idx] = max_sim
+        except Exception as e:
+            print(e)
+    with open("fs_wae_test_set_smile_to_max_sim_generated_molecule.pkl", "wb") as f:
+        pickle.dump(generated_mol_sims, f)
 
-params = get_params(dataset)
-params["gene_exp_condition_mlp"]["input_feature_dim"] = 832 + 978 + 1
-pretrained_model = AAE.load_from_checkpoint(
-    wae_lower_lr,
-    params=params,
-    dataset=dataset,
-    using_lincs=True,
-    using_wasserstein_loss=True,
-    using_gp=True,
-)
+    print("done with wae fs")
 
-results = {}
-
-for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
-    zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
-):
-    print("evaluating wae fs", original_idx)
-    try:
-        candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
-            control_idx,
-            tumour_idx,
-            original_idx,
-            dataset,
-            pretrained_model,
-            num_samples=20,
-        )
-        results["_".join([reference_smile, str(original_idx)])] = {}
-        results["_".join([reference_smile, str(original_idx)])]["generated_smiles"] = [
-            Chem.MolToSmiles(mol) for mol in candidate_molecules
-        ]
-        sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
-        results["_".join([reference_smile, str(original_idx)])]["sa_scores"] = sa_scores
-    except Exception as e:
-        print(e)
-
-with open("fs_wae_generated_molecules_and_sa_scores.pkl", "wb") as f:
-    pickle.dump(results, f)
-
-generated_mol_sims = {}
-for reference_smile_original_idx in tqdm(results):
-    try:
-        reference_smile = reference_smile.rsplit("_", 1)[0]
-        max_sim = compute_max_similarity(
-            candidate_molecules=[
-                Chem.MolFromSmiles(smile)
-                for smile in results[reference_smile_original_idx]["generated_smiles"]
-            ],
-            reference_smile=reference_smile,
-        )
-        generated_mol_sims[reference_smile_original_idx] = max_sim
-    except Exception as e:
-        print(e)
-with open("fs_wae_test_set_smile_to_max_sim_generated_molecule.pkl", "wb") as f:
-    pickle.dump(generated_mol_sims, f)
-
-print("done with wae fs")
-
-######################## WAE ##########################
+    ######################## WAE ##########################
