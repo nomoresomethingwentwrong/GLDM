@@ -13,6 +13,7 @@ from rdkit.Chem import AllChem
 from rdkit.Chem.Fraggle.FraggleSim import GetFraggleSimilarity
 import numpy as np
 import torch 
+from tqdm import tqdm
 
 def generate_similar_molecules_with_gene_exp_diff(
     control_idx, 
@@ -96,6 +97,6 @@ def internal_diversity(
 ):
     m_fps = [AllChem.GetMorganFingerprintAsBitVect(mol,radius=radius, nBits=nBits) for mol in generated_molecules]
     tanimoto_sim_sum = 0
-    for fp in m_fps:
+    for fp in tqdm(m_fps):
         tanimoto_sim_sum += sum(DataStructs.BulkTanimotoSimilarity(fp, [other_fp for other_fp in m_fps if other_fp != fp]))
     return 1- 1/(len(generated_molecules)*(len(generated_molecules)-1))*tanimoto_sim_sum
