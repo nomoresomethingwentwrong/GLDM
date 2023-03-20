@@ -33,6 +33,7 @@ class MoLeROutput:
     mu: torch.Tensor
     log_var: torch.Tensor
     latent_representation: torch.Tensor
+    input_molecule_representations: torch.Tensor
 
 
 class LayerType(Enum):
@@ -718,7 +719,7 @@ def get_params(dataset):
         "decode_on_validation_end": True,
         "using_cyclical_anneal": False,
         "discriminator": {
-            "input_feature_dim": 512,
+            "input_feature_dim": 832,#512,
             "output_size": 1,
             "hidden_layer_dims": [256, 128, 64],
         },

@@ -94,9 +94,20 @@ def internal_diversity(
     generated_molecules,
     radius = 3,
     nBits = 1024,
-):
-    m_fps = [AllChem.GetMorganFingerprintAsBitVect(mol,radius=radius, nBits=nBits) for mol in generated_molecules]
+):  
+    m_fps = []
+    for mol in generated_molecules:
+        try:
+            m_fps.append(AllChem.GetMorganFingerprintAsBitVect(mol,radius=radius, nBits=nBits))
+        except Exception as e:
+            print(e)
     tanimoto_sim_sum = 0
+    num_samples = 0
     for fp in tqdm(m_fps):
-        tanimoto_sim_sum += sum(DataStructs.BulkTanimotoSimilarity(fp, [other_fp for other_fp in m_fps if other_fp != fp]))
-    return 1- 1/(len(generated_molecules)*(len(generated_molecules)-1))*tanimoto_sim_sum
+        try:
+            tanimoto_sim_sum += sum(DataStructs.BulkTanimotoSimilarity(fp, [other_fp for other_fp in m_fps if other_fp != fp]))
+            num_samples += len(m_fps)-1
+        except Exception as e:
+            print(e)
+        
+    return 1- 1/(num_samples)*tanimoto_sim_sum
