@@ -68,7 +68,7 @@ class AAE(AbstractModel):
         """Params is a nested dictionary with the relevant parameters."""
         super(AAE, self).__init__()
         self._init_params(params, dataset)
-        self.save_hyperparameters(ignore = ['dataset'])
+        self.save_hyperparameters(ignore=["dataset"])
         if "training_hyperparams" in params:
             self._training_hyperparams = params["training_hyperparams"]
         else:
@@ -203,14 +203,18 @@ class AAE(AbstractModel):
     #     z = q.rsample()
     #     return p, q, z
 
-    def condition_on_gene_expression(self, latent_representation, gene_expressions, dose):
+    def condition_on_gene_expression(
+        self, latent_representation, gene_expressions, dose
+    ):
         """
         Latent representation has size batch_size x latent_dim
         Gene expressions have size batch_size x 978
         Output dimensions is batch_size x latent_dim
         """
         return self._gene_exp_condition_mlp(
-            torch.cat((latent_representation, gene_expressions, dose.unsqueeze(-1)), dim=-1)
+            torch.cat(
+                (latent_representation, gene_expressions, dose.unsqueeze(-1)), dim=-1
+            )
         )
 
     def forward(self, batch):
@@ -253,7 +257,7 @@ class AAE(AbstractModel):
             latent_representation = self.condition_on_gene_expression(
                 latent_representation=input_molecule_representations,
                 gene_expressions=batch.gene_expressions,
-                dose = batch.dose
+                dose=batch.dose,
             )  # currently maps to 512
         else:
             latent_representation = self.latent_repr_mlp(
@@ -298,6 +302,7 @@ class AAE(AbstractModel):
             # p=p,
             # q=q,
             latent_representation=latent_representation,
+            input_molecule_representations=input_molecule_representations,
         )
 
     def compute_loss(self, moler_output, batch, optimizer_idx):
@@ -336,7 +341,7 @@ class AAE(AbstractModel):
         # untouched during the weight update
         if optimizer_idx == 0:
             encoder_latents_predictions = self.discriminator(
-                moler_output.latent_representation
+                moler_output.input_molecule_representations  # latent_representation
             )
             if self._using_wasserstein_loss:
                 # here we want the generator to fool the discriminator => we want it to produce examples that
@@ -383,11 +388,11 @@ class AAE(AbstractModel):
         # here we only update the discriminator parameters and nothing else
         elif optimizer_idx == 1:
             encoder_latents_predictions = self.discriminator(
-                moler_output.latent_representation
+                moler_output.input_molecule_representations#latent_representation
             )
 
             actual_normal_distribution_latent_vectors = torch.randn_like(
-                moler_output.latent_representation,
+                moler_output.input_molecule_representations,#latent_representation,
                 device=self.full_graph_encoder._dummy_param.device,
             )
             actual_normal_distribution_latents_predictions = self.discriminator(

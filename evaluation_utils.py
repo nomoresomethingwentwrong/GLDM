@@ -38,6 +38,8 @@ class MoLeRGenerator(DistributionMatchingGenerator):
                 ckpt_file_path, params=params, dataset=dataset, using_lincs = using_lincs
             )
         elif model_type == 'aae':
+            if using_lincs:
+                params["gene_exp_condition_mlp"]["input_feature_dim"] = 832 + 978 + 1
             self.model = AAE.load_from_checkpoint(
                 ckpt_file_path, 
                 params=params, 

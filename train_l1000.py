@@ -38,16 +38,48 @@ if __name__ == "__main__":
     --pretrained_ckpt=/data/ongh0068/l1000/2023-03-03_09_30_01.589479/epoch=12-val_loss=0.46.ckpt \
     --pretrained_ckpt_model_type=vae \
     
+    ##### FROM SCRATCH 
+
+    # VAE: no oclr + no kl anneal ##### LOWER LR + LOWER GRADIENT CLIP VAL + CLAMP LOG VAR DUE TO INSTABILITY and nan loss in kld
+    python train_l1000.py \
+    --layer_type=FiLMConv \
+    --model_architecture=vae \
+    --gradient_clip_val=0.1 \
+    --max_lr=5e-5 \
+    --gen_step_drop_probability=0.0 \
+    --use_clamp_log_var
+
+    # AAE: oclr 
+    python train_l1000.py \
+    --layer_type=FiLMConv \
+    --model_architecture=aae \
+    --gradient_clip_val=1.0 \
+    --max_lr=1e-4 \
+    --gen_step_drop_probability=0.0
+    
+    # WAE: oclr  
+    python train_l1000.py \
+    --layer_type=FiLMConv \
+    --model_architecture=aae \
+    --gradient_clip_val=0.0 \
+    --max_lr=1e-4 \
+    --using_wasserstein_loss --using_gp \
+    --gen_step_drop_probability=0.0
+
+    ##### FROM SCRATCH 
 
     # VAE: no oclr + no kl anneal + ? dropout?
     python train_l1000.py \
     --layer_type=FiLMConv \
     --model_architecture=vae \
     --gradient_clip_val=1.0 \
-    --max_lr=1e-4 \
+    --max_lr=5e-6 \
     --gen_step_drop_probability=0.0 \
-    --pretrained_ckpt=/data/ongh0068/l1000/2023-03-03_09_30_01.589479/epoch=12-val_loss=0.46.ckpt \
+    --pretrained_ckpt=/data/ongh0068/l1000/2023-03-05_14_24_55.916122/epoch=24-val_loss=0.29.ckpt \
     --pretrained_ckpt_model_type=vae 
+
+    # /data/ongh0068/l1000/2023-03-05_14_24_55.916122/epoch=24-val_loss=0.29.ckpt
+    # /data/ongh0068/l1000/2023-03-03_09_30_01.589479/epoch=12-val_loss=0.46.ckpt
 
 
     # AAE: oclr + no gen step dropout
@@ -56,7 +88,7 @@ if __name__ == "__main__":
     --model_architecture=aae \
     --use_oclr_scheduler \
     --gradient_clip_val=1.0 \
-    --max_lr=1e-4 \
+    --max_lr=1e-5 \
     --gen_step_drop_probability=0.0 \
     --pretrained_ckpt=/data/ongh0068/l1000/2023-03-06_16_47_15.554929/epoch=11-train_loss=0.71.ckpt \
     --pretrained_ckpt_model_type=aae 
@@ -69,7 +101,7 @@ if __name__ == "__main__":
     --model_architecture=aae \
     --use_oclr_scheduler \
     --gradient_clip_val=1.0 \
-    --max_lr=1e-4 \
+    --max_lr=1e-5 \
     --gen_step_drop_probability=0.0 \
     --pretrained_ckpt=/data/ongh0068/l1000/2023-03-07_23_24_09.367132/epoch=05-train_loss=0.23.ckpt \
     --pretrained_ckpt_model_type=aae --using_wasserstein_loss --using_gp
@@ -87,14 +119,15 @@ if __name__ == "__main__":
     parser.add_argument("--use_oclr_scheduler", action="store_true")
     parser.add_argument("--using_cyclical_anneal", action="store_true")
     parser.add_argument("--using_wasserstein_loss", action="store_true")
+    parser.add_argument("--use_clamp_log_var", action="store_true")
     parser.add_argument("--using_gp", action="store_true")
     parser.add_argument("--gradient_clip_val", required=True, type=float, default=1.0)
     parser.add_argument("--max_lr", required=True, type=float, default=1e-5)
     parser.add_argument(
         "--gen_step_drop_probability", required=True, type=float, default=0.5
     )
-    parser.add_argument("--pretrained_ckpt", required=True, type=str)
-    parser.add_argument("--pretrained_ckpt_model_type", required=True, type=str)
+    parser.add_argument("--pretrained_ckpt", type=str)
+    parser.add_argument("--pretrained_ckpt_model_type", type=str)
 
     args = parser.parse_args()
 
@@ -192,6 +225,7 @@ if __name__ == "__main__":
             using_lincs=True,
             num_train_batches=len(train_dataloader),
             batch_size=batch_size,
+            use_clamp_log_var = True if args.use_clamp_log_var is not None else False
         )  # train_dataset)
     else:
         raise ValueError
@@ -260,7 +294,7 @@ if __name__ == "__main__":
     trainer = Trainer(
         accelerator="gpu",
         max_epochs=30,
-        devices=[1],
+        devices=[2],
         callbacks=callbacks,
         logger=tensorboard_logger,
         gradient_clip_val=args.gradient_clip_val,

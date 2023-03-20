@@ -13,12 +13,15 @@ from rdkit.Chem import AllChem
 from rdkit.Chem.Fraggle.FraggleSim import GetFraggleSimilarity
 import numpy as np
 import torch 
+from tqdm import tqdm
 
 def generate_similar_molecules_with_gene_exp_diff(
     control_idx, 
     tumour_idx,
     dataset,
     model,
+    num_samples = 1000,
+    device = 'cuda:0'
 ):
     possible_pairs = np.array(list(itertools.product(control_idx, tumour_idx)))
 
@@ -29,20 +32,27 @@ def generate_similar_molecules_with_gene_exp_diff(
     tumour_gene_exp_batched = dataset._gene_exp_tumour[tumour_idx_batched]
     difference_gene_exp_batched = tumour_gene_exp_batched - control_gene_exp_batched
 
-    # Create 1000//num_diff_vectors random vectors 
-    num_rand_vectors_required = 1000//difference_gene_exp_batched.shape[0]
-    random_vectors = torch.randn(num_rand_vectors_required, 512)
-
-    # repeat each gene expression difference vector in its place a number of times
-    # equal to the number of random vectors using repeat_interleave
-    # then repeat the random vectors batchwise so that we can align the random vectors 
-    # with the gene expression differences 
-    # Eg given 114 gene expression diff vectors, we will have 8 random vectors
-    # then for each gene expresison vector, we want to match it with each of the 
-    # 8 random vectors individually
-    difference_gene_exp_batched = torch.tensor(difference_gene_exp_batched)
-    difference_gene_exp_batched = torch.repeat_interleave(difference_gene_exp_batched, num_rand_vectors_required, dim = 0)
-    random_vectors = random_vectors.repeat(possible_pairs.shape[0], 1)
+    # Create num_samples//num_diff_vectors random vectors 
+    if num_samples > difference_gene_exp_batched.shape[0]:
+        num_rand_vectors_required = num_samples//difference_gene_exp_batched.shape[0]
+        random_vectors = torch.randn(num_rand_vectors_required, 512, device = device)
+        # repeat each gene expression difference vector in its place a number of times
+        # equal to the number of random vectors using repeat_interleave
+        # then repeat the random vectors batchwise so that we can align the random vectors 
+        # with the gene expression differences 
+        # Eg given 114 gene expression diff vectors, we will have 8 random vectors
+        # then for each gene expresison vector, we want to match it with each of the 
+        # 8 random vectors individually
+        difference_gene_exp_batched = torch.tensor(difference_gene_exp_batched, device = device)
+        difference_gene_exp_batched = torch.repeat_interleave(difference_gene_exp_batched, num_rand_vectors_required, dim = 0)
+        random_vectors = random_vectors.repeat(possible_pairs.shape[0], 1)
+    
+    else:
+        num_rand_vectors_required = num_samples
+        # since number of samples is less than the number of gene expressions
+        # we need to truncate the gene expressions too
+        difference_gene_exp_batched = torch.tensor(difference_gene_exp_batched[:num_samples, :], device = device)
+        random_vectors = torch.randn(num_rand_vectors_required, 512, device = device)
 
 
     conditioned_random_vectors = model.condition_on_gene_expression(
@@ -84,9 +94,20 @@ def internal_diversity(
     generated_molecules,
     radius = 3,
     nBits = 1024,
-):
-    m_fps = [AllChem.GetMorganFingerprintAsBitVect(mol,radius=radius, nBits=nBits) for mol in generated_molecules]
+):  
+    m_fps = []
+    for mol in generated_molecules:
+        try:
+            m_fps.append(AllChem.GetMorganFingerprintAsBitVect(mol,radius=radius, nBits=nBits))
+        except Exception as e:
+            print(e)
     tanimoto_sim_sum = 0
-    for fp in m_fps:
-        tanimoto_sim_sum += sum(DataStructs.BulkTanimotoSimilarity(fp, [other_fp for other_fp in m_fps if other_fp != fp]))
-    return 1- 1/(len(generated_molecules)*(len(generated_molecules)-1))*tanimoto_sim_sum
+    num_samples = 0
+    for fp in tqdm(m_fps):
+        try:
+            tanimoto_sim_sum += sum(DataStructs.BulkTanimotoSimilarity(fp, [other_fp for other_fp in m_fps if other_fp != fp]))
+            num_samples += len(m_fps)-1
+        except Exception as e:
+            print(e)
+        
+    return 1- 1/(num_samples)*tanimoto_sim_sum
