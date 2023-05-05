@@ -1,0 +1,46 @@
+model:
+  base_learning_rate: 5.0e-05
+  target: ldm.models.diffusion.ddpm.LatentDiffusion
+  params:
+    linear_start: 0.00085
+    linear_end: 0.012
+    num_timesteps_cond: 1
+    log_every_t: 50
+    timesteps: 200
+    first_stage_key: image
+    image_size: 512
+    channels: 1
+    monitor: val/loss_simple_ema
+    scale_factor: 1    # was 0.18215
+    use_ema: False
+    parameterization: eps
+
+  first_stage_config:
+    target: model.BaseModel
+    model_type: vae
+    ckpt_path: /data/conghao001/FYP/DrugDiscovery/first_stage_models/2023-03-03_09_30_01.589479/epoch=12-val_loss=0.46.ckpt
+    using_lincs: False
+  
+  cond_stage_config: __is_unconditional__
+
+  unet_config:
+    target: ldm.modules.diffusionmodules.openaimodel.UNetModel
+    params:
+      image_size: 512
+      in_channels: 1
+      out_channels: 1
+      model_channels: 64
+      dims: 1
+      attention_resolutions:
+      # note: this isn\t actually the resolution but
+      # the downsampling factor, i.e. this corresnponds to
+      # attention on spatial resolution 8,16,32, as the
+      # spatial reolution of the latents is 64 for f4
+      - 4
+      - 2
+      num_res_blocks: 1
+      channel_mult:
+      - 1
+      - 2
+      - 3
+      num_head_channels: 8
