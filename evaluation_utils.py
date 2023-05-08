@@ -122,6 +122,7 @@ class LDMGenerator(DistributionMatchingGenerator):
         )
         ldm_model.load_state_dict(ckpt['state_dict'])
         ldm_model = ldm_model.to(device)
+        ldm_model.eval()
         self.model = ldm_model
 
         sampler = MolSampler(ldm_model)
