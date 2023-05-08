@@ -4,6 +4,7 @@ import torch
 from ldm.models.diffusion.ddpm import DDPM, DiffusionWrapper, disabled_train
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.util import log_txt_as_img, exists, default, ismap, isimage, mean_flat, count_params, instantiate_from_config, get_obj_from_str
+from torch.optim.lr_scheduler import LambdaLR
 from pytorch_lightning.utilities import rank_zero_only
 import numpy as np
 
@@ -12,6 +13,7 @@ class LatentDiffusion(DDPM):
                  first_stage_config,
                  cond_stage_config,
                  dataset, 
+                 drop_prob,
                  batch_size,
                  first_stage_params,
                  first_stage_ckpt,
@@ -24,6 +26,8 @@ class LatentDiffusion(DDPM):
                  scale_factor=1.0,
                  scale_by_std=False,
                  *args, **kwargs):
+        # self.log("drop_prob", dataset._gen_step_drop_probability)    # can't call here since trainer is not initiated yet
+        
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
         assert self.num_timesteps_cond <= kwargs['timesteps']
@@ -32,6 +36,7 @@ class LatentDiffusion(DDPM):
         self.latent_dim = first_stage_params['latent_repr_dim']
         # self.dataset = dataset
         self.batch_size = batch_size
+        self.model_architecture = first_stage_config['model_type']
         # self.first_stage_params = first_stage_params
         # self.first_stage_ckpt = first_stage_ckpt
         
@@ -44,6 +49,7 @@ class LatentDiffusion(DDPM):
         ckpt_path = kwargs.pop("ckpt_path", None)    # this is for the diff model ckpt, not vaes
         ignore_keys = kwargs.pop("ignore_keys", [])
         super().__init__(conditioning_key=conditioning_key, *args, **kwargs)    # DiffusionWrapper is called here
+        self.save_hyperparameters(ignore=['dataset'])
         
         self.concat_mode = concat_mode
         self.cond_stage_trainable = cond_stage_trainable
@@ -192,10 +198,15 @@ class LatentDiffusion(DDPM):
         #     z = encoder_posterior.sample()
 
         if isinstance(encoder_posterior, torch.Tensor):
-            mean_and_logvar = self.first_stage_model.mean_log_var_mlp(encoder_posterior)
-            mu = mean_and_logvar[:, : self.latent_dim]  # Shape: [V, MD]
-            log_var = mean_and_logvar[:, self.latent_dim :]  # Shape: [V, MD]
-            z = self.first_stage_model.reparametrize(mu, log_var)
+            if self.model_architecture == 'vae':
+                mean_and_logvar = self.first_stage_model.mean_log_var_mlp(encoder_posterior)
+                mu = mean_and_logvar[:, : self.latent_dim]  # Shape: [V, MD]
+                log_var = mean_and_logvar[:, self.latent_dim :]  # Shape: [V, MD]
+                z = self.first_stage_model.reparametrize(mu, log_var)
+            elif self.model_architecture == 'aae' or self.model_architecture == 'wae':
+                z = self.first_stage_model.latent_repr_mlp(encoder_posterior)
+            else:
+                raise NotImplementedError('first stage model type is not supported')
         else:
             raise NotImplementedError(f"encoder_posterior of type '{type(encoder_posterior)}' not yet implemented")
         return self.scale_factor * z
@@ -676,5 +687,6 @@ class LatentDiffusion(DDPM):
                     'interval': 'step',
                     'frequency': 1
                 }]
+            print("Done setting up scheduler.")
             return [opt], scheduler
         return opt

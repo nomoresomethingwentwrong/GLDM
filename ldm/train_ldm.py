@@ -52,8 +52,17 @@ if __name__ == "__main__":
     parser.add_argument("--config_file", type=str, default="config/ddim_vae_uncon.yml")
 
     '''
-    VAE: 
+    VAE (unconditional): 
     python train_ldm.py --layer_type=FiLMConv --model_architecture=vae --use_oclr_scheduler --gradient_clip_val=1.0 --max_lr=1e-4 --gen_step_drop_probability=0
+
+    VAE (conditional): 
+    python train_ldm.py --layer_type=FiLMConv --model_architecture=vae --use_oclr_scheduler --gradient_clip_val=1.0 --max_lr=1e-4 --gen_step_drop_probability=0 --config_file=config/ddim_vae_con.yml
+
+    AAE (conditional)):
+    python train_ldm.py --layer_type=FiLMConv --model_architecture=aae --use_oclr_scheduler --gradient_clip_val=1.0 --max_lr=1e-4 --gen_step_drop_probability=0.95 --config_file=config/ddim_aae_con.yml
+
+    WAE (conditional):
+    python train_ldm.py --layer_type=FiLMConv --model_architecture=aae --use_oclr_scheduler --gradient_clip_val=1.0 --max_lr=1e-4 --using_wasserstein_loss --using_gp --gen_step_drop_probability=0.95 --config_file=config/ddim_wae_con.yml
     '''
 
     args = parser.parse_args()
@@ -110,7 +119,7 @@ if __name__ == "__main__":
         # prefetch_factor=0,
     )
 
-    valid_dataset = valid_dataset[:200]  # use only 200 batches for validation
+    valid_dataset = valid_dataset[:100]  # use only 200 batches for validation
     valid_dataloader = DataLoader(
         valid_dataset,
         batch_size=batch_size,
@@ -150,6 +159,7 @@ if __name__ == "__main__":
         first_stage_config,
         config['model']['cond_stage_config'],
         train_dataset, 
+        args.gen_step_drop_probability,
         batch_size,
         first_stage_params,
         first_stage_config['ckpt_path'],
@@ -166,31 +176,32 @@ if __name__ == "__main__":
     # Callbacks
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tensorboard_logger = TensorBoardLogger(save_dir=f"lightning_logs/{now}", name=f"logs_{now}")
-    early_stopping = EarlyStopping(monitor=ldm_params.monitor, patience=10)
-    if model_architecture == "vae":
+    early_stopping = EarlyStopping(monitor=ldm_params.monitor, patience=5)
+    if model_architecture == "vae" or model_architecture == "aae":
         checkpoint_callback = ModelCheckpoint(
             save_top_k=1,
             monitor="val/loss",
             dirpath=f"lightning_logs/{now}",
             mode="min",
-            filename='epoch{epoch:02d}-dropout{args.gen_step_drop_probability:.2f}-val_loss{val/loss:.2f}',
+            filename='epoch={epoch:02d}-val_loss={val/loss:.2f}',
+            auto_insert_metric_name=False,
         )
-    elif model_architecture == "aae":
-        checkpoint_callback = ModelCheckpoint(
-            dirpath=f"lightning_logs/{now}",
-            filename="{epoch:02d}-{train_loss:.2f}",
-            monitor="epoch",
-            every_n_epochs=3,
-            save_on_train_epoch_end=True,
-            save_top_k=-1,
-        )
+    # elif model_architecture == "aae":
+    #     checkpoint_callback = ModelCheckpoint(
+    #         dirpath=f"lightning_logs/{now}",
+    #         filename="{epoch:02d}-{train_loss:.2f}",
+    #         monitor="epoch",
+    #         every_n_epochs=3,
+    #         save_on_train_epoch_end=True,
+    #         save_top_k=-1,
+    #     )
     else:
         raise NotImplementedError('model_architecture must be either "vae" or "aae"')
 
     callbacks = (
         [checkpoint_callback, lr_monitor, early_stopping]
-        if model_architecture == "vae"
-        else [checkpoint_callback, lr_monitor]
+        # if model_architecture == "vae"
+        # else [checkpoint_callback, lr_monitor]
     )
 
     trainer = Trainer(accelerator='gpu', 
