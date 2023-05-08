@@ -719,7 +719,7 @@ def get_params(dataset):
         "decode_on_validation_end": True,
         "using_cyclical_anneal": False,
         "discriminator": {
-            "input_feature_dim": 832,#512,
+            "input_feature_dim": 512,#832,
             "output_size": 1,
             "hidden_layer_dims": [256, 128, 64],
         },
@@ -736,7 +736,7 @@ def get_params(dataset):
             "use_bias": False,
         },
         "gene_exp_condition_mlp": {
-            "input_feature_dim": 512 + 978 + 1,  # should be 832 + 978 + 1 for AAE; +1 is for the dosage
+            "input_feature_dim": 512 + 978 + 1,#512 + 978 + 1,  # should be 832 + 978 + 1 for AAE; +1 is for the dosage
             "output_size": 512,
             "hidden_layer_dims": [],
             "use_bias": False,

@@ -17,7 +17,7 @@ from decoding_utils import (
 from torchvision import transforms
 
 
-sys.path.append("../moler_reference")
+sys.path.append("./moler_reference")
 from molecule_generation.utils.training_utils import get_class_balancing_weights
 
 from molecule_generation.utils.moler_decoding_utils import (
