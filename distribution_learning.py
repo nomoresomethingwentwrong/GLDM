@@ -4,7 +4,7 @@ import sys
 sys.path.append('/data/conghao001/diffusion_model/latent-diffusion')
 sys.path.append('moler_reference')
 sys.path.append('ldm')
-from guacamol.assess_distribution_learning import assess_distribution_learning
+from guacamol.assess_distribution_learning import assess_distribution_learning, _assess_distribution_learning
 from guacamol.utils.helpers import setup_default_logger
 from evaluation_utils import MoLeRGenerator, LDMGenerator
 from ldm.moler_ldm import LatentDiffusion
@@ -171,6 +171,31 @@ if __name__ == "__main__":
         --output_dir=distribution_learning_benchmark \
         --output_fp=fs_l1000_wae_best_distribution_learning_results.json \
         --device='cuda:0'  
+
+    ######### LDM models
+    # uncon LDM uncon VAE
+    python distribution_learning.py  \
+        --using_ldm \
+        --ldm_ckpt=ldm/lightning_logs/2023-05-07_13_30_51.439532/epoch=99-val_loss=0.14.ckpt \
+        --ldm_config=ldm/config/ldm_uncon+vae_uncon.yml \
+        --output_fp=ldm_uncon+vae_uncon.json \
+        --smiles_file=ldm_uncon+vae_uncon_smiles.pkl
+
+    # uncon LDM uncon AAE
+    python distribution_learning.py  \
+        --using_ldm \
+        --ldm_ckpt=ldm/lightning_logs/2023-05-07_13_21_17.798876/epoch=97-val_loss=0.11.ckpt \
+        --ldm_config=ldm/config/ldm_uncon+aae_uncon.yml \
+        --output_fp=ldm_uncon+aae_uncon.json \
+        --smiles_file=ldm_uncon+aae_uncon_smiles.pkl
+    
+    # uncon LDM uncon WAE
+    python distribution_learning.py  \
+        --using_ldm \
+        --ldm_ckpt=ldm/lightning_logs/2023-05-07_13_22_44.481752/epoch=99-val_loss=0.13.ckpt \
+        --ldm_config=ldm/config/ldm_uncon+wae_uncon.yml \
+        --output_fp=ldm_uncon+wae_uncon.json \
+        --smiles_file=ldm_uncon+wae_uncon_smiles.pkl
     """
     parser = argparse.ArgumentParser(
         description="Molecule distribution learning benchmark for random smiles sampler",
@@ -179,7 +204,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dist_file", default="/data/ongh0068/guacamol/guacamol_v1_all.smiles"
     )
-    parser.add_argument("--output_dir", default=None, help="Output directory")
+    parser.add_argument("--output_dir", default="distribution_learning_benckmark", help="Output directory")
     parser.add_argument("--suite", default="v2")
     parser.add_argument("--using_wasserstein_loss", action="store_true")
     parser.add_argument("--using_gp", action="store_true")
@@ -195,7 +220,10 @@ if __name__ == "__main__":
     parser.add_argument("--using_ldm", action="store_true")
     parser.add_argument("--ldm_ckpt", type=str, default="/data/conghao001/FYP/DrugDiscovery/ldm/lightning_logs/2023-05-07_13_30_51.439532/epoch=99-val_loss=0.14.ckpt")
     parser.add_argument("--ldm_config", type=str, default="/data/conghao001/FYP/DrugDiscovery/ldm/config/ldm_uncon+vae_uncon.yml")
+    parser.add_argument("--smiles_file", type=str, default="distribution_learning_smiles.pkl")
     args = parser.parse_args()
+
+    number_samples = 2000   # let's use 2000 samples rather than 10000
 
     if args.output_dir is None:
         args.output_dir = os.path.dirname(os.path.realpath(__file__))
@@ -209,6 +237,8 @@ if __name__ == "__main__":
             ldm_config=args.ldm_config,
             ldm_ckpt=args.ldm_ckpt,
             device=args.device,
+            number_samples=number_samples,
+            smiles_file=args.smiles_file,
         )
     else: 
         generator = MoLeRGenerator(
@@ -223,9 +253,17 @@ if __name__ == "__main__":
 
     json_file_path = os.path.join(args.output_dir, args.output_fp)
 
-    assess_distribution_learning(
+    # assess_distribution_learning(
+    #     generator,
+    #     chembl_training_file=args.dist_file,
+    #     json_output_file=json_file_path,
+    #     benchmark_version=args.suite,
+    # )
+
+    _assess_distribution_learning(
         generator,
         chembl_training_file=args.dist_file,
         json_output_file=json_file_path,
         benchmark_version=args.suite,
+        number_samples=2000,
     )

@@ -1,5 +1,5 @@
 from typing import List
-
+import pickle
 import torch
 from guacamol.distribution_matching_generator import DistributionMatchingGenerator
 from model import BaseModel
@@ -74,7 +74,11 @@ class LDMGenerator(DistributionMatchingGenerator):
         self, 
         ldm_ckpt, 
         ldm_config,
+        number_samples = 2000,
+        ddim_steps = 50,
+        ddim_eta = 1.0,
         device="cuda:0",
+        smiles_file = None,
     ):
         # super().__init__(
         #     ckpt_file_path, 
@@ -102,6 +106,8 @@ class LDMGenerator(DistributionMatchingGenerator):
         unet_params = config['model']['unet_config']['params']
         batch_size = 1
         drop_prob = 0.0
+        latent_space_dim = int(ldm_params['image_size'])
+        size = [1, latent_space_dim]
 
         ldm_model = LatentDiffusion(
             first_stage_config,
@@ -115,11 +121,22 @@ class LDMGenerator(DistributionMatchingGenerator):
             **ldm_params
         )
         ldm_model.load_state_dict(ckpt['state_dict'])
+        ldm_model = ldm_model.to(device)
         self.model = ldm_model
 
         sampler = MolSampler(ldm_model)
 
-        self.sampler = sampler
+        # number_samples = 10000   # this is used by Guacamol benchmark
+        size = [1, latent_space_dim]
+        z_samples, _ = sampler.sample(
+            S = ddim_steps,
+            batch_size = number_samples,  # not batch size
+            shape = size,
+            ddim_eta = ddim_eta
+        )
+        self.z = z_samples.view((number_samples, latent_space_dim))
+
+        self.smiles_file = smiles_file
 
     def instantiate_ldm(self):
         return 
@@ -132,20 +149,24 @@ class LDMGenerator(DistributionMatchingGenerator):
     ) -> List[str]:
         # z = torch.randn(number_samples, latent_space_dim).to(self._device) if self._device is not None else torch.randn(number_samples, latent_space_dim).cuda()
         
-        size = [1, latent_space_dim]
-        z_samples, _ = self.sampler.sample(
-            S = ddim_steps,
-            batch_size = number_samples,  # not batch size
-            shape = size,
-            ddim_eta = ddim_eta
-        )
-        z = z_samples.view((number_samples, latent_space_dim))
+        # size = [1, latent_space_dim]
+        # z_samples, _ = self.sampler.sample(
+        #     S = ddim_steps,
+        #     batch_size = number_samples,  # not batch size
+        #     shape = size,
+        #     ddim_eta = ddim_eta
+        # )
+        # z = z_samples.view((number_samples, latent_space_dim))
 
         decoder_states = self.model.first_stage_model.decode(
-            latent_representations=z, max_num_steps=max_num_steps
+            latent_representations=self.z, max_num_steps=max_num_steps
         )
         samples = [
             Chem.MolToSmiles(decoder_state.molecule) for decoder_state in decoder_states
         ]
+
+        if self.smiles_file is not None:
+            with open(self.smiles_file, 'wb') as f:
+                pickle.dump(samples, f)
 
         return samples
