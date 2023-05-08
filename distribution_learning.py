@@ -1,8 +1,17 @@
 import os
 import argparse
+import sys
+sys.path.append('/data/conghao001/diffusion_model/latent-diffusion')
+sys.path.append('moler_reference')
+sys.path.append('ldm')
 from guacamol.assess_distribution_learning import assess_distribution_learning
 from guacamol.utils.helpers import setup_default_logger
-from evaluation_utils import MoLeRGenerator
+from evaluation_utils import MoLeRGenerator, LDMGenerator
+from ldm.moler_ldm import LatentDiffusion
+from ldm.DDIM import MolSampler
+from omegaconf import OmegaConf
+
+
 
 if __name__ == "__main__":
     setup_default_logger()
@@ -182,7 +191,10 @@ if __name__ == "__main__":
     parser.add_argument("--model_type")
     parser.add_argument("--using_lincs", action="store_true")
     parser.add_argument("--output_fp", default="distribution_learning_results.json")
-    parser.add_argument("--device", type=str)
+    parser.add_argument("--device", type=str, default="cuda:0")
+    parser.add_argument("--using_ldm", action="store_true")
+    parser.add_argument("--ldm_ckpt", type=str, default="/data/conghao001/FYP/DrugDiscovery/ldm/lightning_logs/2023-05-07_13_30_51.439532/epoch=99-val_loss=0.14.ckpt")
+    parser.add_argument("--ldm_config", type=str, default="/data/conghao001/FYP/DrugDiscovery/ldm/config/ldm_uncon+vae_uncon.yml")
     args = parser.parse_args()
 
     if args.output_dir is None:
@@ -191,15 +203,23 @@ if __name__ == "__main__":
     with open(args.dist_file, "r") as smiles_file:
         smiles_list = [line.strip() for line in smiles_file.readlines()]
 
-    generator = MoLeRGenerator(
-        ckpt_file_path=args.ckpt_file_path,
-        layer_type=args.layer_type,
-        model_type=args.model_type,
-        using_lincs=args.using_lincs,
-        using_gp=True if args.using_gp else False,
-        using_wasserstein_loss=True if args.using_wasserstein_loss else False,
-        device=args.device,
-    )
+    if args.using_ldm:
+        assert os.path.exists(args.ldm_ckpt)
+        generator = LDMGenerator(
+            ldm_config=args.ldm_config,
+            ldm_ckpt=args.ldm_ckpt,
+            device=args.device,
+        )
+    else: 
+        generator = MoLeRGenerator(
+            ckpt_file_path=args.ckpt_file_path,
+            layer_type=args.layer_type,
+            model_type=args.model_type,
+            using_lincs=args.using_lincs,
+            using_gp=True if args.using_gp else False,
+            using_wasserstein_loss=True if args.using_wasserstein_loss else False,
+            device=args.device,
+        )
 
     json_file_path = os.path.join(args.output_dir, args.output_fp)
 
