@@ -179,7 +179,8 @@ if __name__ == "__main__":
         --ldm_ckpt=ldm/lightning_logs/2023-05-07_13_30_51.439532/epoch=99-val_loss=0.14.ckpt \
         --ldm_config=ldm/config/ldm_uncon+vae_uncon.yml \
         --output_fp=ldm_uncon+vae_uncon.json \
-        --smiles_file=ldm_uncon+vae_uncon_smiles.pkl
+        --smiles_file=ldm_uncon+vae_uncon_smiles.pkl \
+        --number_samples=2000
 
     # uncon LDM uncon AAE
     python distribution_learning.py  \
@@ -187,7 +188,8 @@ if __name__ == "__main__":
         --ldm_ckpt=ldm/lightning_logs/2023-05-07_13_21_17.798876/epoch=97-val_loss=0.11.ckpt \
         --ldm_config=ldm/config/ldm_uncon+aae_uncon.yml \
         --output_fp=ldm_uncon+aae_uncon.json \
-        --smiles_file=ldm_uncon+aae_uncon_smiles.pkl
+        --smiles_file=ldm_uncon+aae_uncon_smiles.pkl \
+        --number_samples=2000
     
     # uncon LDM uncon WAE
     python distribution_learning.py  \
@@ -195,7 +197,17 @@ if __name__ == "__main__":
         --ldm_ckpt=ldm/lightning_logs/2023-05-07_13_22_44.481752/epoch=99-val_loss=0.13.ckpt \
         --ldm_config=ldm/config/ldm_uncon+wae_uncon.yml \
         --output_fp=ldm_uncon+wae_uncon.json \
-        --smiles_file=ldm_uncon+wae_uncon_smiles.pkl
+        --smiles_file=ldm_uncon+wae_uncon_smiles.pkl \
+        --number_samples=2000
+
+    # uncon LDM con VAE
+    python distribution_learning.py  \
+        --using_ldm \
+        --ldm_ckpt=ldm/lightning_logs/2023-05-07_13_34_19.194735/epoch=99-val_loss=0.14.ckpt \
+        --ldm_config=ldm/config/ldm_con+vae_con.yml \
+        --output_fp=ldm_con+vae_con.json \
+        --smiles_file=ldm_con+vae_con_smiles.pkl \
+        --number_samples=2000
     """
     parser = argparse.ArgumentParser(
         description="Molecule distribution learning benchmark for random smiles sampler",
@@ -204,7 +216,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dist_file", default="/data/ongh0068/guacamol/guacamol_v1_all.smiles"
     )
-    parser.add_argument("--output_dir", default="distribution_learning_benckmark", help="Output directory")
+    parser.add_argument("--output_dir", default="distribution_learning_benchmark", help="Output directory")
     parser.add_argument("--suite", default="v2")
     parser.add_argument("--using_wasserstein_loss", action="store_true")
     parser.add_argument("--using_gp", action="store_true")
@@ -221,9 +233,10 @@ if __name__ == "__main__":
     parser.add_argument("--ldm_ckpt", type=str, default="/data/conghao001/FYP/DrugDiscovery/ldm/lightning_logs/2023-05-07_13_30_51.439532/epoch=99-val_loss=0.14.ckpt")
     parser.add_argument("--ldm_config", type=str, default="/data/conghao001/FYP/DrugDiscovery/ldm/config/ldm_uncon+vae_uncon.yml")
     parser.add_argument("--smiles_file", type=str, default="distribution_learning_smiles.pkl")
+    parser.add_argument("--number_samples", type=int, default=1000)
     args = parser.parse_args()
 
-    number_samples = 2000   # let's use 2000 samples rather than 10000
+    number_samples = args.number_samples   # let's use 2000 samples rather than 10000
 
     if args.output_dir is None:
         args.output_dir = os.path.dirname(os.path.realpath(__file__))
@@ -234,10 +247,10 @@ if __name__ == "__main__":
     if args.using_ldm:
         assert os.path.exists(args.ldm_ckpt)
         generator = LDMGenerator(
-            ldm_config=args.ldm_config,
             ldm_ckpt=args.ldm_ckpt,
-            device=args.device,
+            ldm_config=args.ldm_config,
             number_samples=number_samples,
+            device=args.device,
             smiles_file=args.smiles_file,
         )
     else: 
@@ -265,5 +278,5 @@ if __name__ == "__main__":
         chembl_training_file=args.dist_file,
         json_output_file=json_file_path,
         benchmark_version=args.suite,
-        number_samples=2000,
+        number_samples=number_samples,
     )
