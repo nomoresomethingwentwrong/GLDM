@@ -200,13 +200,61 @@ if __name__ == "__main__":
         --smiles_file=ldm_uncon+wae_uncon_smiles.pkl \
         --number_samples=2000
 
+    # L1000 uncon LDM con VAE
+    python distribution_learning.py  \
+        --using_ldm \
+        --dist_file=/data/ongh0068/l1000/lincs/l1000.smiles \
+        --ldm_ckpt=ldm/lightning_logs/2023-05-09_20_25_51.027799/epoch=61-val_loss=0.23.ckpt \
+        --ldm_config=ldm/config/ldm_uncon+vae_con.yml \
+        --output_fp=l1000_ldm_uncon+vae_con_10000.json \
+        --smiles_file=l1000_ldm_uncon+vae_con_smiles_10000.pkl \
+        --number_samples=10000
+
+    # L1000 uncon LDM con AAE
+    python distribution_learning.py  \
+        --using_ldm \
+        --dist_file=/data/ongh0068/l1000/lincs/l1000.smiles \
+        --ldm_ckpt=ldm/lightning_logs/2023-05-09_20_25_56.908252/epoch=66-val_loss=0.24.ckpt \
+        --ldm_config=ldm/config/ldm_uncon+aae_con.yml \
+        --output_fp=l1000_ldm_uncon+aae_con_10000.json \
+        --smiles_file=l1000_ldm_uncon+aae_con_smiles_10000.pkl \
+        --number_samples=10000
+    
+    # L1000 uncon LDM con WAE
+    python distribution_learning.py  \
+        --using_ldm \
+        --dist_file=/data/ongh0068/l1000/lincs/l1000.smiles \
+        --ldm_ckpt=ldm/lightning_logs/2023-05-09_20_27_32.768937/epoch=72-val_loss=0.13.ckpt \
+        --ldm_config=ldm/config/ldm_uncon+wae_con.yml \
+        --output_fp=l1000_ldm_uncon+wae_con_10000.json \
+        --smiles_file=l1000_ldm_uncon+wae_con_smiles_10000.pkl \
+        --number_samples=10000
+
     # uncon LDM con VAE
     python distribution_learning.py  \
         --using_ldm \
-        --ldm_ckpt=ldm/lightning_logs/2023-05-07_13_34_19.194735/epoch=99-val_loss=0.14.ckpt \
-        --ldm_config=ldm/config/ldm_con+vae_con.yml \
-        --output_fp=ldm_con+vae_con.json \
-        --smiles_file=ldm_con+vae_con_smiles.pkl \
+        --ldm_ckpt=ldm/lightning_logs/2023-05-09_20_25_51.027799/epoch=61-val_loss=0.23.ckpt \
+        --ldm_config=ldm/config/ldm_uncon+vae_con.yml \
+        --output_fp=ldm_uncon+vae_con_10000.json \
+        --smiles_file=ldm_uncon+vae_con_smiles_10000.pkl \
+        --number_samples=10000
+
+    # uncon LDM con AAE
+    python distribution_learning.py  \
+        --using_ldm \
+        --ldm_ckpt=ldm/lightning_logs/2023-05-09_20_25_56.908252/epoch=66-val_loss=0.24.ckpt \
+        --ldm_config=ldm/config/ldm_uncon+aae_con.yml \
+        --output_fp=ldm_uncon+aae_con_2000.json \
+        --smiles_file=ldm_uncon+aae_con_smiles_2000.pkl \
+        --number_samples=2000
+
+    # uncon LDM con WAE
+    python distribution_learning.py  \
+        --using_ldm \
+        --ldm_ckpt=ldm/lightning_logs/2023-05-09_20_27_32.768937/epoch=72-val_loss=0.13.ckpt \
+        --ldm_config=ldm/config/ldm_uncon+wae_con.yml \
+        --output_fp=ldm_uncon+wae_con_2000.json \
+        --smiles_file=ldm_uncon+wae_con_smiles_2000.pkl \
         --number_samples=2000
     """
     parser = argparse.ArgumentParser(
@@ -237,6 +285,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     number_samples = args.number_samples   # let's use 2000 samples rather than 10000
+    internal_bs = 1000    # internal batch size for LDM sampler
+    assert number_samples % internal_bs == 0
 
     if args.output_dir is None:
         args.output_dir = os.path.dirname(os.path.realpath(__file__))
@@ -250,6 +300,7 @@ if __name__ == "__main__":
             ldm_ckpt=args.ldm_ckpt,
             ldm_config=args.ldm_config,
             number_samples=number_samples,
+            internal_bs=internal_bs,
             device=args.device,
             smiles_file=args.smiles_file,
         )

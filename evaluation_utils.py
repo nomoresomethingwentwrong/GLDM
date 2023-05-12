@@ -10,6 +10,8 @@ from omegaconf import OmegaConf
 from model_utils import get_params
 from dataset import MolerDataset
 from rdkit import Chem
+from tqdm import tqdm
+import gc
 
 
 class MoLeRGenerator(DistributionMatchingGenerator):
@@ -75,6 +77,7 @@ class LDMGenerator(DistributionMatchingGenerator):
         ldm_ckpt, 
         ldm_config,
         number_samples = 2000,
+        internal_bs = 1000,
         ddim_steps = 50,
         ddim_eta = 1.0,
         device="cuda:0",
@@ -89,7 +92,7 @@ class LDMGenerator(DistributionMatchingGenerator):
         #     using_gp,
         #     device
         # )
-        ckpt = torch.load(ldm_ckpt, map_location = device)
+        self.ckpt = torch.load(ldm_ckpt, map_location = device)
         config = OmegaConf.load(ldm_config)
         ldm_params = config['model']['params']
 
@@ -109,7 +112,7 @@ class LDMGenerator(DistributionMatchingGenerator):
         latent_space_dim = int(ldm_params['image_size'])
         size = [1, latent_space_dim]
 
-        ldm_model = LatentDiffusion(
+        self.model = LatentDiffusion(
             first_stage_config,
             config['model']['cond_stage_config'],
             dataset, 
@@ -120,23 +123,31 @@ class LDMGenerator(DistributionMatchingGenerator):
             unet_config = config['model']['unet_config'],
             **ldm_params
         )
-        ldm_model.load_state_dict(ckpt['state_dict'])
-        ldm_model = ldm_model.to(device)
-        ldm_model.eval()
-        self.model = ldm_model
+        self.model.load_state_dict(self.ckpt['state_dict'])
+        self.model = self.model.to(device)
+        self.model.eval()
+        # self.model = self.model
 
-        sampler = MolSampler(ldm_model)
+        sampler = MolSampler(self.model)
 
         # number_samples = 10000   # this is used by Guacamol benchmark
+        steps = int(number_samples / internal_bs)
         size = [1, latent_space_dim]
-        z_samples, _ = sampler.sample(
-            S = ddim_steps,
-            batch_size = number_samples,  # not batch size
-            shape = size,
-            ddim_eta = ddim_eta
-        )
-        self.z = z_samples.view((number_samples, latent_space_dim))
-
+        for step in tqdm(range(steps)):
+            z_samples, _ = sampler.sample(
+                S = ddim_steps,
+                batch_size = internal_bs,  # not batch size
+                shape = size,
+                ddim_eta = ddim_eta
+            )
+            if step == 0:
+                self.z = z_samples.view((internal_bs, latent_space_dim))
+            else:
+                tmp_z = z_samples.view((internal_bs, latent_space_dim))
+                self.z = torch.cat((self.z, tmp_z), dim = 0)
+        print("z shape: ", self.z.shape)
+        print("Finished sampling z")
+        # self.release_gpu_memory(self.model)
         self.smiles_file = smiles_file
 
     def instantiate_ldm(self):
@@ -144,6 +155,15 @@ class LDMGenerator(DistributionMatchingGenerator):
     
     def instantiate_sampler(self):
         return
+    
+    def release_gpu_memory(self, model, ckpt=None):
+        model.to('cpu')
+        del model
+        if ckpt is not None:
+            del ckpt
+        gc.collect()
+        torch.cuda.empty_cache()
+        print("GPU memory released")
     
     def generate(
         self, number_samples: int, latent_space_dim: int = 512, max_num_steps: int = 120, ddim_steps: int = 50, ddim_eta: float = 1.0
@@ -159,9 +179,14 @@ class LDMGenerator(DistributionMatchingGenerator):
         # )
         # z = z_samples.view((number_samples, latent_space_dim))
 
+        # print("z device: ", self.z.device)
+        # print("model device: ", self.model.device)
+
         decoder_states = self.model.first_stage_model.decode(
             latent_representations=self.z, max_num_steps=max_num_steps
         )
+        # decoder_states = decoder_states.cpu()
+        # self.release_gpu_memory(self.model, self.ckpt)
         samples = [
             Chem.MolToSmiles(decoder_state.molecule) for decoder_state in decoder_states
         ]
