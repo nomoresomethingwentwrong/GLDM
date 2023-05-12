@@ -176,7 +176,7 @@ if __name__ == "__main__":
     # Callbacks
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tensorboard_logger = TensorBoardLogger(save_dir=f"lightning_logs/{now}", name=f"logs_{now}")
-    early_stopping = EarlyStopping(monitor=ldm_params.monitor, patience=5)
+    early_stopping = EarlyStopping(monitor=ldm_params.monitor, patience=3)
     if model_architecture == "vae" or model_architecture == "aae":
         checkpoint_callback = ModelCheckpoint(
             save_top_k=1,
