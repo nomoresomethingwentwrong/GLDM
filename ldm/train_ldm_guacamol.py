@@ -85,9 +85,10 @@ if __name__ == "__main__":
     valid_split = "valid_0"
 
     raw_moler_trace_dataset_parent_folder = "/data/ongh0068/guacamol/trace_dir"
-    output_pyg_trace_dataset_parent_folder = (
-        "../data/guacamol/already_batched"
-    )
+    # output_pyg_trace_dataset_parent_folder = (
+    #     "../data/guacamol/already_batched"
+    # )
+    output_pyg_trace_dataset_parent_folder = "/data/ongh0068/l1000/already_batched"
 
     config = OmegaConf.load(args.config_file)
     ldm_params = config['model']['params']
@@ -278,7 +279,7 @@ if __name__ == "__main__":
     trainer = Trainer(accelerator='gpu', 
                       max_epochs=100, 
                     #   num_sanity_val_steps=0,    # the CUDA capability is insufficient to train the whole batch, we drop some graphs in each batch, but need to set num_sanity_val_steps=0 to avoid the validation step to run (with the whole batch)
-                      devices=[0], 
+                      devices=[2], 
                       callbacks=callbacks, 
                       logger=tensorboard_logger, 
                       gradient_clip_val=args.gradient_clip_val)
