@@ -226,14 +226,14 @@ def sanitise(row):
 dataset = LincsDataset(
     root="/data/ongh0068",
     raw_moler_trace_dataset_parent_folder="/data/ongh0068/guacamol/trace_dir",
-    output_pyg_trace_dataset_parent_folder="/data/ongh0068/l1000/already_batched",
+    output_pyg_trace_dataset_parent_folder="/data/ongh0068/l1000/l1000_biaae/already_batched",
     split="valid_0",
-    gene_exp_controls_file_path="/data/ongh0068/l1000/lincs/robust_normalized_controls.npz",
-    gene_exp_tumour_file_path="/data/ongh0068/l1000/lincs/robust_normalized_tumors.npz",
-    lincs_csv_file_path="/data/ongh0068/l1000/lincs/experiments_filtered.csv",
+    gene_exp_controls_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/robust_normalized_controls.npz",
+    gene_exp_tumour_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/robust_normalized_tumors.npz",
+    lincs_csv_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/experiments_filtered.csv",
 )
 
-test_set = pd.read_csv("/data/ongh0068/l1000/INPUT_DIR/test.csv")
+test_set = pd.read_csv("/data/ongh0068/l1000/l1000_biaae/INPUT_DIR/test.csv")
 test_set = test_set.apply(lambda x: sanitise(x), axis=1)
 
 
@@ -242,25 +242,61 @@ control_idxes = test_set.ControlIndices.values
 tumour_idxes = test_set.TumourIndices.values
 original_idxes = test_set.original_idx.to_list()
 
+# Run this script with the following command:
+# Add CUDA_VISIBLE_DEVICES explicitly to avoid creating tensors on disjunct GPUs
+# CUDA_VISIBLE_DEVICES=0 python evaluate_ldm_l1000_metrics.py -d cuda -m vae
+# CUDA_VISIBLE_DEVICES=0 python evaluate_ldm_l1000_metrics.py -d cuda -m aae
+# CUDA_VISIBLE_DEVICES=0 python evaluate_ldm_l1000_metrics.py -d cuda -m wae
+
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--model_type", type=str, choices=["vae", "aae", "wae"])
 parser.add_argument("-d", "--device", type=str, default="cuda:0")
 args = parser.parse_args()
+# if args.model_type == "vae":
+#     config_file = "config/ldm_con+vae_uncon.yml"
+#     # ckpt_file = "tmp_logs/2023-05-08_13_39_31.158242/epoch=47-val_loss=0.12.ckpt"
+#     ckpt_file = "lightning_logs/2023-05-08_13_39_31.158242/epoch=78-val_loss=0.10.ckpt"
+#     output_file = "cond_generation_res/ldm_uncon_vae_generated_molecules_and_sa_scores.pkl"
+#     mol_file = "cond_generation_res/ldm_uncon_vae_test_set_smile_to_max_sim_generated_molecule.pkl"
+# elif args.model_type == "aae":
+#     config_file = "config/ldm_con+aae_uncon.yml"
+#     # ckpt_file = "tmp_logs/2023-05-08_13_39_25.455320/epoch=47-val_loss=0.11.ckpt"
+#     ckpt_file = "lightning_logs/2023-05-08_13_39_25.455320/epoch=96-val_loss=0.09.ckpt"
+#     output_file = "cond_generation_res/ldm_uncon_aae_generated_molecules_and_sa_scores.pkl"
+#     mol_file = "cond_generation_res/ldm_uncon_aae_test_set_smile_to_max_sim_generated_molecule.pkl"
+# elif args.model_type == "wae":
+#     config_file = "config/ldm_con+wae_uncon.yml"
+#     # ckpt_file = "tmp_logs/2023-05-08_13_39_19.133896/epoch=46-val_loss=0.13.ckpt"
+#     ckpt_file = "lightning_logs/2023-05-08_13_39_19.133896/epoch=84-val_loss=0.11.ckpt"
+#     output_file = "cond_generation_res/ldm_uncon_wae_generated_molecules_and_sa_scores.pkl"
+#     mol_file = "cond_generation_res/ldm_uncon_wae_test_set_smile_to_max_sim_generated_molecule.pkl"
+# else:
+#     raise ValueError("model type not supported")
+
 if args.model_type == "vae":
-    config_file = "config/ldm_con+vae_uncon.yml"
-    ckpt_file = "tmp_logs/2023-05-08_13_39_31.158242/epoch=47-val_loss=0.12.ckpt"
-    output_file = "cond_generation_res/ldm_uncon_vae_generated_molecules_and_sa_scores.pkl"
-    mol_file = "cond_generation_res/ldm_uncon_vae_test_set_smile_to_max_sim_generated_molecule.pkl"
+    config_file = "config/ldm_con+vae_con.yml"
+    # ckpt_file = "tmp_logs/2023-05-08_13_39_31.158242/epoch=47-val_loss=0.12.ckpt"
+    ckpt_file = "lightning_logs/2023-05-07_13_34_19.194735/epoch=99-val_loss=0.14.ckpt"
+    output_file = "cond_generation_res/ldm_con_vae_generated_molecules_and_sa_scores.pkl"
+    mol_file = "cond_generation_res/ldm_con_vae_test_set_smile_to_max_sim_generated_molecule.pkl"
 elif args.model_type == "aae":
-    config_file = "config/ldm_con+aae_uncon.yml"
-    ckpt_file = "tmp_logs/2023-05-08_13_39_25.455320/epoch=47-val_loss=0.11.ckpt"
-    output_file = "cond_generation_res/ldm_uncon_aae_generated_molecules_and_sa_scores.pkl"
-    mol_file = "cond_generation_res/ldm_uncon_aae_test_set_smile_to_max_sim_generated_molecule.pkl"
+    config_file = "config/ldm_con+aae_con.yml"
+    # ckpt_file = "tmp_logs/2023-05-08_13_39_25.455320/epoch=47-val_loss=0.11.ckpt"
+    ckpt_file = "lightning_logs/2023-05-07_13_23_22.866645/epoch=95-val_loss=0.20.ckpt"
+    output_file = "cond_generation_res/ldm_con_aae_generated_molecules_and_sa_scores1.pkl"
+    mol_file = "cond_generation_res/ldm_con_aae_test_set_smile_to_max_sim_generated_molecule1.pkl"
 elif args.model_type == "wae":
-    config_file = "config/ldm_con+wae_uncon.yml"
-    ckpt_file = "tmp_logs/2023-05-08_13_39_19.133896/epoch=46-val_loss=0.13.ckpt"
-    output_file = "cond_generation_res/ldm_uncon_wae_generated_molecules_and_sa_scores.pkl"
-    mol_file = "cond_generation_res/ldm_uncon_wae_test_set_smile_to_max_sim_generated_molecule.pkl"
+    config_file = "config/ldm_con+wae_con.yml"
+    # ckpt_file = "tmp_logs/2023-05-08_13_39_19.133896/epoch=46-val_loss=0.13.ckpt"
+    ckpt_file = "lightning_logs/2023-05-07_13_23_05.773620/epoch=97-val_loss=0.09.ckpt"
+    output_file = "cond_generation_res/ldm_con_wae_generated_molecules_and_sa_scores.pkl"
+    mol_file = "cond_generation_res/ldm_con_wae_test_set_smile_to_max_sim_generated_molecule.pkl"
+elif args.model_type == "test":
+    config_file = "config/ldm_con+vae_con.yml"
+    # ckpt_file = "tmp_logs/2023-05-08_13_39_31.158242/epoch=47-val_loss=0.12.ckpt"
+    ckpt_file = "lightning_logs/2023-05-07_13_34_19.194735/epoch=99-val_loss=0.14.ckpt"
+    output_file = "cond_generation_res/test_one.pkl"
+    mol_file = "cond_generation_res/test_one.pkl"
 else:
     raise ValueError("model type not supported")
 
@@ -297,12 +333,13 @@ results = {}
 
 print("total number of test samples: ", len(reference_smiles))
 # collect tensors into lists and then instantiate dataset
-# i = 0
+i = 0
 for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
     zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
 ):
-    # if i >= 10:
-    #     break
+    print("progress: ", i)
+    if i >= 1:
+        break
     print("evaluating ", original_idx)
     try:
         candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
@@ -316,6 +353,7 @@ for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
             num_samples=100,
         )
         results["_".join([reference_smile, str(original_idx)])] = {}
+        results["_".join([reference_smile, str(original_idx)])]["generated_mols"] = [mol for mol in candidate_molecules]
         results["_".join([reference_smile, str(original_idx)])][
             "generated_smiles"
         ] = [Chem.MolToSmiles(mol) for mol in candidate_molecules]
@@ -323,9 +361,9 @@ for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
         results["_".join([reference_smile, str(original_idx)])][
             "sa_scores"
         ] = sa_scores
+        i += 1
     except Exception as e:
         print(e)
-    # i += 1
 
 with open(output_file, "wb") as f:
     pickle.dump(results, f)
@@ -333,14 +371,18 @@ with open(output_file, "wb") as f:
 generated_mol_sims = {}
 for reference_smile_original_idx in tqdm(results):
     try:
-        reference_smile = reference_smile.rsplit("_", 1)[0]
+        reference_smile = reference_smile_original_idx.rsplit("_", 1)[0]
+        print("reference smile: ", reference_smile)
+        print("relevant result:", results[reference_smile_original_idx])
+        # reference_smile = reference_smile.rsplit("_", 1)[0]
         max_sim = compute_max_similarity(
-            candidate_molecules=[
-                Chem.MolFromSmiles(smile)
-                for smile in results[reference_smile_original_idx][
-                    "generated_smiles"
-                ]
-            ],
+            # candidate_molecules=[
+            #     Chem.MolFromSmiles(smile)
+            #     for smile in results[reference_smile_original_idx][
+            #         "generated_smiles"
+            #     ]
+            # ],
+            candidate_molecules=results[reference_smile_original_idx]["generated_mols"],
             reference_smile=reference_smile,
         )
         generated_mol_sims[reference_smile_original_idx] = max_sim
