@@ -181,6 +181,7 @@ if __name__ == "__main__":
         --output_fp=ldm_uncon+vae_uncon.json \
         --smiles_file=ldm_uncon+vae_uncon_smiles.pkl \
         --number_samples=2000
+    on correct model: python distribution_learning.py --using_ldm --ldm_ckpt=ldm/lightning_logs/2023-05-12_11_35_19.511014/epoch=03-step=119999.0-val_loss=0.16.ckpt --ldm_config=ldm/config/ldm_uncon+vae_uncon.yml --output_fp=guacamol_correct_ldm_vae_10000.json --smiles_file=guacamol_correct_ldm_vae_10000_smiles.pkl --number_samples=10000
 
     # uncon LDM uncon AAE
     python distribution_learning.py  \
@@ -190,6 +191,8 @@ if __name__ == "__main__":
         --output_fp=ldm_uncon+aae_uncon.json \
         --smiles_file=ldm_uncon+aae_uncon_smiles.pkl \
         --number_samples=2000
+
+    on correct model: python distribution_learning.py --using_ldm --ldm_ckpt=ldm/lightning_logs/2023-05-12_11_35_19.568394/epoch=12-step=473999.0-val_loss=0.14.ckpt --ldm_config=ldm/config/ldm_uncon+aae_uncon.yml --output_fp=guacamol_correct_ldm_aae_10000.json --smiles_file=guacamol_correct_ldm_aae_10000_smiles.pkl --number_samples=10000
     
     # uncon LDM uncon WAE
     python distribution_learning.py  \
@@ -199,6 +202,8 @@ if __name__ == "__main__":
         --output_fp=ldm_uncon+wae_uncon.json \
         --smiles_file=ldm_uncon+wae_uncon_smiles.pkl \
         --number_samples=2000
+
+    python distribution_learning.py --using_ldm --ldm_ckpt=ldm/lightning_logs/2023-05-12_11_35_19.567452/epoch=03-step=119999.0-val_loss=0.18.ckpt --ldm_config=ldm/config/ldm_uncon+wae_uncon.yml --output_fp=guacamol_correct_ldm_wae_10000.json --smiles_file=guacamol_correct_ldm_wae_10000_smiles.pkl --number_samples=10000
 
     # L1000 uncon LDM con VAE
     python distribution_learning.py  \
@@ -317,17 +322,17 @@ if __name__ == "__main__":
 
     json_file_path = os.path.join(args.output_dir, args.output_fp)
 
-    # assess_distribution_learning(
-    #     generator,
-    #     chembl_training_file=args.dist_file,
-    #     json_output_file=json_file_path,
-    #     benchmark_version=args.suite,
-    # )
-
-    _assess_distribution_learning(
+    assess_distribution_learning(
         generator,
         chembl_training_file=args.dist_file,
         json_output_file=json_file_path,
         benchmark_version=args.suite,
-        number_samples=number_samples,
     )
+
+    # _assess_distribution_learning(
+    #     generator,
+    #     chembl_training_file=args.dist_file,
+    #     json_output_file=json_file_path,
+    #     benchmark_version=args.suite,
+    #     number_samples=number_samples,
+    # )

@@ -150,6 +150,19 @@ class LDMGenerator(DistributionMatchingGenerator):
         # self.release_gpu_memory(self.model)
         self.smiles_file = smiles_file
 
+        decoder_states = self.model.first_stage_model.decode(
+            latent_representations=self.z, max_num_steps=120
+        )
+        # decoder_states = decoder_states.cpu()
+        # self.release_gpu_memory(self.model, self.ckpt)
+        self.samples = [
+            Chem.MolToSmiles(decoder_state.molecule) for decoder_state in decoder_states
+        ]
+
+        if self.smiles_file is not None:
+            with open(self.smiles_file, 'wb') as f:
+                pickle.dump(self.samples, f)
+
     def instantiate_ldm(self):
         return 
     
@@ -182,17 +195,8 @@ class LDMGenerator(DistributionMatchingGenerator):
         # print("z device: ", self.z.device)
         # print("model device: ", self.model.device)
 
-        decoder_states = self.model.first_stage_model.decode(
-            latent_representations=self.z, max_num_steps=max_num_steps
-        )
-        # decoder_states = decoder_states.cpu()
-        # self.release_gpu_memory(self.model, self.ckpt)
-        samples = [
-            Chem.MolToSmiles(decoder_state.molecule) for decoder_state in decoder_states
-        ]
+        
 
-        if self.smiles_file is not None:
-            with open(self.smiles_file, 'wb') as f:
-                pickle.dump(samples, f)
+        
 
-        return samples
+        return self.samples
