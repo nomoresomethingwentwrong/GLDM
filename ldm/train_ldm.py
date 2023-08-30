@@ -49,39 +49,40 @@ if __name__ == "__main__":
     )
     parser.add_argument("--pretrained_ckpt", type=str)
     parser.add_argument("--pretrained_ckpt_model_type", type=str)
-    parser.add_argument("--config_file", type=str, default="config/ddim_vae_uncon.yml")
+    parser.add_argument("--config_file", type=str, default="config/ldm_uncon+vae_uncon.yml")
 
     '''
     VAE (unconditional): 
     python train_ldm.py --layer_type=FiLMConv --model_architecture=vae --use_oclr_scheduler --gradient_clip_val=1.0 --max_lr=1e-4 --gen_step_drop_probability=0
 
     VAE (conditional): 
-    python train_ldm.py --layer_type=FiLMConv --model_architecture=vae --use_oclr_scheduler --gradient_clip_val=1.0 --max_lr=1e-4 --gen_step_drop_probability=0 --config_file=config/ddim_vae_con.yml
+    python train_ldm.py --layer_type=FiLMConv --model_architecture=vae --use_oclr_scheduler --gradient_clip_val=1.0 --max_lr=1e-4 --gen_step_drop_probability=0.9 --config_file=config/ldm_con+vae_con.yml
 
     AAE (conditional)):
-    python train_ldm.py --layer_type=FiLMConv --model_architecture=aae --use_oclr_scheduler --gradient_clip_val=1.0 --max_lr=1e-4 --gen_step_drop_probability=0.95 --config_file=config/ddim_aae_con.yml
+    python train_ldm.py --layer_type=FiLMConv --model_architecture=aae --use_oclr_scheduler --gradient_clip_val=1.0 --max_lr=1e-4 --gen_step_drop_probability=0.9 --config_file=config/ldm_con+aae_con.yml
 
     WAE (conditional):
-    python train_ldm.py --layer_type=FiLMConv --model_architecture=aae --use_oclr_scheduler --gradient_clip_val=1.0 --max_lr=1e-4 --using_wasserstein_loss --using_gp --gen_step_drop_probability=0.95 --config_file=config/ddim_wae_con.yml
+    python train_ldm.py --layer_type=FiLMConv --model_architecture=aae --use_oclr_scheduler --gradient_clip_val=1.0 --max_lr=1e-4 --using_wasserstein_loss --using_gp --gen_step_drop_probability=0.9 --config_file=config/ldm_con+wae_con.yml
     '''
 
     args = parser.parse_args()
 
     raw_moler_trace_dataset_parent_folder = "/data/ongh0068/guacamol/trace_dir"
     output_pyg_trace_dataset_parent_folder = (
-        "/data/ongh0068/l1000/already_batched"
+        "/data/ongh0068/l1000/l1000_biaae/already_batched"
     )
 
     config = OmegaConf.load(args.config_file)
     ldm_params = config['model']['params']
+    log_name = args.config_file.split('/')[-1].split('.')[0]
 
     train_dataset = LincsDataset(
         root="/data/ongh0068",
         raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
-        gene_exp_controls_file_path="/data/ongh0068/l1000/lincs/robust_normalized_controls.npz",
-        gene_exp_tumour_file_path="/data/ongh0068/l1000/lincs/robust_normalized_tumors.npz",
-        lincs_csv_file_path="/data/ongh0068/l1000/lincs/experiments_filtered.csv",
+        gene_exp_controls_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/robust_normalized_controls.npz",
+        gene_exp_tumour_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/robust_normalized_tumors.npz",
+        lincs_csv_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/experiments_filtered.csv",
         split=train_split1,
         gen_step_drop_probability=args.gen_step_drop_probability,
     )
@@ -90,9 +91,9 @@ if __name__ == "__main__":
         root="/data/ongh0068",
         raw_moler_trace_dataset_parent_folder=raw_moler_trace_dataset_parent_folder,  # "/data/ongh0068/l1000/trace_playground",
         output_pyg_trace_dataset_parent_folder=output_pyg_trace_dataset_parent_folder,
-        gene_exp_controls_file_path="/data/ongh0068/l1000/lincs/robust_normalized_controls.npz",
-        gene_exp_tumour_file_path="/data/ongh0068/l1000/lincs/robust_normalized_tumors.npz",
-        lincs_csv_file_path="/data/ongh0068/l1000/lincs/experiments_filtered.csv",
+        gene_exp_controls_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/robust_normalized_controls.npz",
+        gene_exp_tumour_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/robust_normalized_tumors.npz",
+        lincs_csv_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/experiments_filtered.csv",
         split=valid_split,
         gen_step_drop_probability=args.gen_step_drop_probability,
     )
@@ -181,7 +182,7 @@ if __name__ == "__main__":
         checkpoint_callback = ModelCheckpoint(
             save_top_k=1,
             monitor="val/loss",
-            dirpath=f"lightning_logs/{now}",
+            dirpath=f"lightning_logs/l1000_{log_name}_{now}",
             mode="min",
             filename='epoch={epoch:02d}-val_loss={val/loss:.2f}',
             auto_insert_metric_name=False,
@@ -207,7 +208,7 @@ if __name__ == "__main__":
     trainer = Trainer(accelerator='gpu', 
                       max_epochs=100, 
                     #   num_sanity_val_steps=0,    # the CUDA capability is insufficient to train the whole batch, we drop some graphs in each batch, but need to set num_sanity_val_steps=0 to avoid the validation step to run (with the whole batch)
-                      devices=[2], 
+                      devices=[0], 
                       callbacks=callbacks, 
                       logger=tensorboard_logger, 
                       gradient_clip_val=args.gradient_clip_val)

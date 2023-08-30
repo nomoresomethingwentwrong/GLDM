@@ -249,7 +249,7 @@ original_idxes = test_set.original_idx.to_list()
 # CUDA_VISIBLE_DEVICES=0 python evaluate_ldm_l1000_metrics.py -d cuda -m wae
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-m", "--model_type", type=str, choices=["vae", "aae", "wae"])
+parser.add_argument("-m", "--model_type", type=str, choices=["vae", "aae", "wae", "test"])
 parser.add_argument("-d", "--device", type=str, default="cuda:0")
 args = parser.parse_args()
 # if args.model_type == "vae":
@@ -276,21 +276,24 @@ args = parser.parse_args()
 if args.model_type == "vae":
     config_file = "config/ldm_con+vae_con.yml"
     # ckpt_file = "tmp_logs/2023-05-08_13_39_31.158242/epoch=47-val_loss=0.12.ckpt"
-    ckpt_file = "lightning_logs/2023-05-07_13_34_19.194735/epoch=99-val_loss=0.14.ckpt"
-    output_file = "cond_generation_res/ldm_con_vae_generated_molecules_and_sa_scores.pkl"
-    mol_file = "cond_generation_res/ldm_con_vae_test_set_smile_to_max_sim_generated_molecule.pkl"
+    # ckpt_file = "lightning_logs/2023-05-07_13_34_19.194735/epoch=99-val_loss=0.14.ckpt"
+    ckpt_file = "lightning_logs/l1000_ldm_con+vae_con_2023-05-12_18_20_25.013834/epoch=19-val_loss=0.31.ckpt"
+    output_file = "cond_generation_res/ldm_con_vae_generated_molecules_and_sa_scores_100.pkl"
+    mol_file = "cond_generation_res/ldm_con_vae_test_set_smile_to_max_sim_generated_molecule_100.pkl"
 elif args.model_type == "aae":
     config_file = "config/ldm_con+aae_con.yml"
     # ckpt_file = "tmp_logs/2023-05-08_13_39_25.455320/epoch=47-val_loss=0.11.ckpt"
-    ckpt_file = "lightning_logs/2023-05-07_13_23_22.866645/epoch=95-val_loss=0.20.ckpt"
-    output_file = "cond_generation_res/ldm_con_aae_generated_molecules_and_sa_scores1.pkl"
-    mol_file = "cond_generation_res/ldm_con_aae_test_set_smile_to_max_sim_generated_molecule1.pkl"
+    # ckpt_file = "lightning_logs/2023-05-07_13_23_22.866645/epoch=95-val_loss=0.20.ckpt"
+    ckpt_file = "lightning_logs/l1000_ldm_con+aae_con_2023-05-12_18_20_27.525874/epoch=20-val_loss=0.36.ckpt"
+    output_file = "cond_generation_res/ldm_con_aae_generated_molecules_and_sa_scores_100.pkl"
+    mol_file = "cond_generation_res/ldm_con_aae_test_set_smile_to_max_sim_generated_molecule_100.pkl"
 elif args.model_type == "wae":
     config_file = "config/ldm_con+wae_con.yml"
     # ckpt_file = "tmp_logs/2023-05-08_13_39_19.133896/epoch=46-val_loss=0.13.ckpt"
-    ckpt_file = "lightning_logs/2023-05-07_13_23_05.773620/epoch=97-val_loss=0.09.ckpt"
-    output_file = "cond_generation_res/ldm_con_wae_generated_molecules_and_sa_scores.pkl"
-    mol_file = "cond_generation_res/ldm_con_wae_test_set_smile_to_max_sim_generated_molecule.pkl"
+    # ckpt_file = "lightning_logs/2023-05-07_13_23_05.773620/epoch=97-val_loss=0.09.ckpt"
+    ckpt_file = "lightning_logs/l1000_ldm_con+wae_con_2023-05-12_18_20_29.796081/epoch=33-val_loss=0.19.ckpt"
+    output_file = "cond_generation_res/ldm_con_wae_generated_molecules_and_sa_scores_100.pkl"
+    mol_file = "cond_generation_res/ldm_con_wae_test_set_smile_to_max_sim_generated_molecule_100.pkl"
 elif args.model_type == "test":
     config_file = "config/ldm_con+vae_con.yml"
     # ckpt_file = "tmp_logs/2023-05-08_13_39_31.158242/epoch=47-val_loss=0.12.ckpt"
@@ -312,6 +315,8 @@ latent_space_dim = int(ldm_params['image_size'])
 size = [1, latent_space_dim]
 device = torch.device(args.device)
 # print("device: ", device)
+if args.model_type == "aae" or args.model_type == "wae":
+    first_stage_params["gene_exp_condition_mlp"]["input_feature_dim"] = 832 + 978 + 1
 
 ckpt = torch.load(ckpt_file, map_location = device)
 ldm_model = LatentDiffusion(
@@ -338,7 +343,7 @@ for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
     zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
 ):
     print("progress: ", i)
-    if i >= 1:
+    if i >= 100:
         break
     print("evaluating ", original_idx)
     try:
@@ -372,8 +377,8 @@ generated_mol_sims = {}
 for reference_smile_original_idx in tqdm(results):
     try:
         reference_smile = reference_smile_original_idx.rsplit("_", 1)[0]
-        print("reference smile: ", reference_smile)
-        print("relevant result:", results[reference_smile_original_idx])
+        # print("reference smile: ", reference_smile)
+        # print("relevant result:", results[reference_smile_original_idx])
         # reference_smile = reference_smile.rsplit("_", 1)[0]
         max_sim = compute_max_similarity(
             # candidate_molecules=[
@@ -388,7 +393,8 @@ for reference_smile_original_idx in tqdm(results):
         generated_mol_sims[reference_smile_original_idx] = max_sim
 
     except Exception as e:
-        print(e)
+        # print(e)
+        pass
 
 with open(mol_file, "wb") as f:
     pickle.dump(generated_mol_sims, f)
