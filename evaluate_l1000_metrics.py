@@ -23,6 +23,8 @@ import sascorer
 import torch
 import numpy as np
 
+num_samples = 100
+
 
 def generate_similar_molecules_with_gene_exp_diff(
     control_idx,
@@ -250,7 +252,7 @@ if args.model_type == "vae":
                 dataset,
                 pretrained_model,
                 rand_vect_dim=512,
-                num_samples=20,
+                num_samples=num_samples,
             )
             results["_".join([reference_smile, str(original_idx)])] = {}
             results["_".join([reference_smile, str(original_idx)])][
@@ -263,13 +265,13 @@ if args.model_type == "vae":
         except Exception as e:
             print(e)
 
-    with open("tl_vae_generated_molecules_and_sa_scores2.pkl", "wb") as f:
+    with open("tl_vae_generated_molecules_and_sa_scores_new.pkl", "wb") as f:
         pickle.dump(results, f)
 
     generated_mol_sims = {}
     for reference_smile_original_idx in tqdm(results):
         try:
-            reference_smile = reference_smile.rsplit("_", 1)[0]
+            reference_smile = reference_smile_original_idx.rsplit("_", 1)[0]
             max_sim = compute_max_similarity(
                 candidate_molecules=[
                     Chem.MolFromSmiles(smile)
@@ -284,7 +286,7 @@ if args.model_type == "vae":
         except Exception as e:
             print(e)
 
-    with open("tl_vae_test_set_smile_to_max_sim_generated_molecule2.pkl", "wb") as f:
+    with open("tl_vae_test_set_smile_to_max_sim_generated_molecule_new.pkl", "wb") as f:
         pickle.dump(generated_mol_sims, f)
     print("done with vae")
     ######################## VAE ##########################
@@ -321,7 +323,7 @@ elif args.model_type == "aae":
                 dataset,
                 pretrained_model,
                 rand_vect_dim=832,
-                num_samples=20,
+                num_samples=num_samples,
             )
             results["_".join([reference_smile, str(original_idx)])] = {}
             results["_".join([reference_smile, str(original_idx)])][
@@ -334,13 +336,13 @@ elif args.model_type == "aae":
         except Exception as e:
             print(e)
 
-    with open("tl_aae_generated_molecules_and_sa_scores2.pkl", "wb") as f:
+    with open("tl_aae_generated_molecules_and_sa_scores_new.pkl", "wb") as f:
         pickle.dump(results, f)
 
     generated_mol_sims = {}
     for reference_smile_original_idx in tqdm(results):
         try:
-            reference_smile = reference_smile.rsplit("_", 1)[0]
+            reference_smile = reference_smile_original_idx.rsplit("_", 1)[0]
             max_sim = compute_max_similarity(
                 candidate_molecules=[
                     Chem.MolFromSmiles(smile)
@@ -354,7 +356,7 @@ elif args.model_type == "aae":
 
         except Exception as e:
             print(e)
-    with open("tl_aae_test_set_smile_to_max_sim_generated_molecule2.pkl", "wb") as f:
+    with open("tl_aae_test_set_smile_to_max_sim_generated_molecule_new.pkl", "wb") as f:
         pickle.dump(generated_mol_sims, f)
 
     print("done with aae")
@@ -363,9 +365,7 @@ elif args.model_type == "wae":
 
     ######################## WAE ##########################
     print("evaluating wae")
-    wae_lower_lr = (
-        "/data/ongh0068/l1000/2023-03-11_20_54_14.382629/epoch=20-train_loss=-8.16.ckpt"
-    )
+    wae_lower_lr = "/data/ongh0068/l1000/2023-03-11_20_54_14.382629/epoch=29-train_loss=-8.76.ckpt"  # "/data/ongh0068/l1000/2023-03-14_09_07_49.273388/epoch=29-train_loss=-1.62.ckpt"  #
 
     params = get_params(dataset)
     params["gene_exp_condition_mlp"]["input_feature_dim"] = 832 + 978 + 1
@@ -392,7 +392,7 @@ elif args.model_type == "wae":
                 dataset,
                 pretrained_model,
                 rand_vect_dim=832,
-                num_samples=20,
+                num_samples=num_samples,
             )
             results["_".join([reference_smile, str(original_idx)])] = {}
             results["_".join([reference_smile, str(original_idx)])][
@@ -405,13 +405,13 @@ elif args.model_type == "wae":
         except Exception as e:
             print(e)
 
-    with open("tl_wae_generated_molecules_and_sa_scores2.pkl", "wb") as f:
+    with open("tl_wae_generated_molecules_and_sa_scores_new.pkl", "wb") as f:
         pickle.dump(results, f)
 
     generated_mol_sims = {}
     for reference_smile_original_idx in tqdm(results):
         try:
-            reference_smile = reference_smile.rsplit("_", 1)[0]
+            reference_smile = reference_smile_original_idx.rsplit("_", 1)[0]
             max_sim = compute_max_similarity(
                 candidate_molecules=[
                     Chem.MolFromSmiles(smile)
@@ -424,7 +424,7 @@ elif args.model_type == "wae":
             generated_mol_sims[reference_smile_original_idx] = max_sim
         except Exception as e:
             print(e)
-    with open("tl_wae_test_set_smile_to_max_sim_generated_molecule2.pkl", "wb") as f:
+    with open("tl_wae_test_set_smile_to_max_sim_generated_molecule_new.pkl", "wb") as f:
         pickle.dump(generated_mol_sims, f)
 
     print("done with wae")
