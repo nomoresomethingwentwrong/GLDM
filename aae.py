@@ -134,6 +134,7 @@ class AAE(AbstractModel):
         )
 
         # If using lincs gene expression
+        # Adapt this if using other latent sampling techniques such as latent diffusion models
         self._using_lincs = using_lincs
         self._include_predict_gene_exp_mlp = include_predict_gene_exp_mlp
         if self._using_lincs:
