@@ -8,7 +8,7 @@ from omegaconf import OmegaConf
 from model_utils import get_params
 from torch.utils.data import ConcatDataset
 from pytorch_lightning.trainer import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, Timer
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 from datetime import datetime
@@ -240,6 +240,8 @@ if __name__ == "__main__":
     lr_monitor = LearningRateMonitor(logging_interval="step")
     tensorboard_logger = TensorBoardLogger(save_dir=f"lightning_logs/{now}", name=f"logs_{now}")
     early_stopping = EarlyStopping(monitor=ldm_params.monitor, patience=3)
+    timer = Timer(duration="00:12:00:00")   # 12 hours (for training one epoch to check training speed)
+
     if model_architecture == "vae" or model_architecture == "aae":
         # checkpoint_callback = ModelCheckpoint(
         #     save_top_k=1,
@@ -271,16 +273,17 @@ if __name__ == "__main__":
         raise NotImplementedError('model_architecture must be either "vae" or "aae"')
 
     callbacks = (
-        [checkpoint_callback, lr_monitor, early_stopping]
+        [checkpoint_callback, lr_monitor, early_stopping, timer]
         # if model_architecture == "vae"
         # else [checkpoint_callback, lr_monitor]
     )
 
     trainer = Trainer(accelerator='gpu', 
-                      max_epochs=100, 
+                      max_epochs=1, #100, 
                     #   num_sanity_val_steps=0,    # the CUDA capability is insufficient to train the whole batch, we drop some graphs in each batch, but need to set num_sanity_val_steps=0 to avoid the validation step to run (with the whole batch)
-                      devices=[2], 
+                      devices=[1], 
                       callbacks=callbacks, 
                       logger=tensorboard_logger, 
                       gradient_clip_val=args.gradient_clip_val)
     trainer.fit(ldm_model, train_dataloaders=train_dataloader, val_dataloaders=valid_dataloader)
+    print("Time for training one epoch: ", timer.time_elapsed("train"))
