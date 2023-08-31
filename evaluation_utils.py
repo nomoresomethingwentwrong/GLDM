@@ -78,7 +78,7 @@ class LDMGenerator(DistributionMatchingGenerator):
         ldm_config,
         number_samples = 2000,
         internal_bs = 1000,
-        ddim_steps = 50,
+        ddim_steps = 500,
         ddim_eta = 1.0,
         device="cuda:0",
         smiles_file = None,
