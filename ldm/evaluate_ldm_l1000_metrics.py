@@ -38,7 +38,7 @@ def generate_similar_molecules_with_gene_exp_diff(
     device,
     rand_vect_dim=512,
     num_samples=20,
-    ddim_steps=50,
+    ddim_steps=500,
     ddim_eta=1.0,
 ):
     # print('device: ', device)
@@ -109,7 +109,8 @@ def generate_similar_molecules_with_gene_exp_diff(
         batch_size = num_samples,  # not batch size
         conditioning = conditioning,
         shape = size,
-        ddim_eta = ddim_eta
+        ddim_eta = ddim_eta,
+        verbose=False
     )
     # print("cond samples device: ", conditioned_random_vectors.device)
     conditioned_random_vectors = conditioned_random_vectors.view((num_samples, rand_vect_dim))
@@ -233,7 +234,8 @@ dataset = LincsDataset(
     lincs_csv_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/experiments_filtered.csv",
 )
 
-test_set = pd.read_csv("/data/ongh0068/l1000/l1000_biaae/INPUT_DIR/test.csv")
+# test_set = pd.read_csv("/data/ongh0068/l1000/l1000_biaae/INPUT_DIR/test.csv")
+test_set = pd.read_csv("filtered_test_set.csv")
 test_set = test_set.apply(lambda x: sanitise(x), axis=1)
 
 
@@ -277,23 +279,23 @@ if args.model_type == "vae":
     config_file = "config/ldm_con+vae_con.yml"
     # ckpt_file = "tmp_logs/2023-05-08_13_39_31.158242/epoch=47-val_loss=0.12.ckpt"
     # ckpt_file = "lightning_logs/2023-05-07_13_34_19.194735/epoch=99-val_loss=0.14.ckpt"
-    ckpt_file = "lightning_logs/l1000_ldm_con+vae_con_2023-05-12_18_20_25.013834/epoch=19-val_loss=0.31.ckpt"
-    output_file = "cond_generation_res/ldm_con_vae_generated_molecules_and_sa_scores_100.pkl"
-    mol_file = "cond_generation_res/ldm_con_vae_test_set_smile_to_max_sim_generated_molecule_100.pkl"
+    ckpt_file = "lightning_logs/2023-05-12_18_20_25.013834/l1000_ldm_con+vae_con_2023-05-12_18_20_25.013834/epoch=19-val_loss=0.31.ckpt"
+    output_file = "cond_generation_res/ldm_con_vae_generated_molecules_and_sa_scores.pkl"
+    mol_file = "cond_generation_res/ldm_con_vae_test_set_smile_to_max_sim_generated_molecule.pkl"
 elif args.model_type == "aae":
     config_file = "config/ldm_con+aae_con.yml"
     # ckpt_file = "tmp_logs/2023-05-08_13_39_25.455320/epoch=47-val_loss=0.11.ckpt"
     # ckpt_file = "lightning_logs/2023-05-07_13_23_22.866645/epoch=95-val_loss=0.20.ckpt"
-    ckpt_file = "lightning_logs/l1000_ldm_con+aae_con_2023-05-12_18_20_27.525874/epoch=20-val_loss=0.36.ckpt"
-    output_file = "cond_generation_res/ldm_con_aae_generated_molecules_and_sa_scores_100.pkl"
-    mol_file = "cond_generation_res/ldm_con_aae_test_set_smile_to_max_sim_generated_molecule_100.pkl"
+    ckpt_file = "lightning_logs/2023-05-12_18_20_27.525874/l1000_ldm_con+aae_con_2023-05-12_18_20_27.525874/epoch=20-val_loss=0.36.ckpt"
+    output_file = "cond_generation_res/ldm_con_aae_generated_molecules_and_sa_scores.pkl"
+    mol_file = "cond_generation_res/ldm_con_aae_test_set_smile_to_max_sim_generated_molecule.pkl"
 elif args.model_type == "wae":
     config_file = "config/ldm_con+wae_con.yml"
     # ckpt_file = "tmp_logs/2023-05-08_13_39_19.133896/epoch=46-val_loss=0.13.ckpt"
     # ckpt_file = "lightning_logs/2023-05-07_13_23_05.773620/epoch=97-val_loss=0.09.ckpt"
-    ckpt_file = "lightning_logs/l1000_ldm_con+wae_con_2023-05-12_18_20_29.796081/epoch=33-val_loss=0.19.ckpt"
-    output_file = "cond_generation_res/ldm_con_wae_generated_molecules_and_sa_scores_100.pkl"
-    mol_file = "cond_generation_res/ldm_con_wae_test_set_smile_to_max_sim_generated_molecule_100.pkl"
+    ckpt_file = "lightning_logs/2023-05-12_18_20_29.796081/l1000_ldm_con+wae_con_2023-05-12_18_20_29.796081/epoch=33-val_loss=0.19.ckpt"
+    output_file = "cond_generation_res/ldm_con_wae_generated_molecules_and_sa_scores.pkl"
+    mol_file = "cond_generation_res/ldm_con_wae_test_set_smile_to_max_sim_generated_molecule.pkl"
 elif args.model_type == "test":
     config_file = "config/ldm_con+vae_con.yml"
     # ckpt_file = "tmp_logs/2023-05-08_13_39_31.158242/epoch=47-val_loss=0.12.ckpt"
@@ -338,14 +340,14 @@ results = {}
 
 print("total number of test samples: ", len(reference_smiles))
 # collect tensors into lists and then instantiate dataset
-i = 0
+# i = 0
 for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
     zip(control_idxes, tumour_idxes, reference_smiles, original_idxes)
 ):
-    print("progress: ", i)
-    if i >= 100:
-        break
-    print("evaluating ", original_idx)
+    # print("progress: ", i)
+    # if i >= 100:
+    #     break
+    # print("evaluating ", original_idx)
     try:
         candidate_molecules = generate_similar_molecules_with_gene_exp_diff(
             control_idx,
@@ -362,11 +364,15 @@ for control_idx, tumour_idx, reference_smile, original_idx in tqdm(
         results["_".join([reference_smile, str(original_idx)])][
             "generated_smiles"
         ] = [Chem.MolToSmiles(mol) for mol in candidate_molecules]
+
+        # candidate_molecules = [Chem.SanitizeMol(mol) for mol in candidate_molecules]
+        for mol in candidate_molecules:
+            Chem.SanitizeMol(mol)
         sa_scores = [sascorer.calculateScore(mol) for mol in candidate_molecules]
         results["_".join([reference_smile, str(original_idx)])][
             "sa_scores"
         ] = sa_scores
-        i += 1
+        # i += 1
     except Exception as e:
         print(e)
 
