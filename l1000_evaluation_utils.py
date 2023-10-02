@@ -78,6 +78,12 @@ def compute_max_similarity(
     nBits=1024,
     return_max_sim_match=False,
 ):
+    for mol in candidate_molecules:
+        try:
+            mol = Chem.SanitizeMol(mol)
+        except Exception as e:
+            print(e)
+
     m_fps = [
         AllChem.GetMorganFingerprintAsBitVect(mol, radius=radius, nBits=nBits)
         for mol in candidate_molecules
