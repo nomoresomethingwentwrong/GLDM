@@ -3,3 +3,16 @@ __pycache__
 .ipynb_checkpoints/*
 ldm/lightning_logs
 ldm/.ipynb_checkpoints
+ldm/__pycache__
+ldm/cond_generation_res
+ldm/tmp_logs
+binding_affinity/.ipynb_checkpoints
+binding_affinity/cond_generation_res
+binding_affinity/default_conformer
+binding_affinity/excape_experiments
+binding_affinity/ligand
+binding_affinity/logs
+binding_affinity/pocket
+binding_affinity/poses
+binding_affinity/bindingdb_metadata
+binding_affinity/protein
