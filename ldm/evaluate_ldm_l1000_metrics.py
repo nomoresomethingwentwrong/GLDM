@@ -56,7 +56,8 @@ def generate_similar_molecules_with_gene_exp_diff(
 
     # Create num_samples//num_diff_vectors random vectors
     if num_samples > difference_gene_exp_batched.shape[0]:
-        num_rand_vectors_required = num_samples // difference_gene_exp_batched.shape[0]
+        # num_rand_vectors_required = num_samples // difference_gene_exp_batched.shape[0]
+        num_rand_vectors_required = - (- num_samples // difference_gene_exp_batched.shape[0])
         random_vectors = torch.randn(
             num_rand_vectors_required, rand_vect_dim, device=device
         )
@@ -73,7 +74,9 @@ def generate_similar_molecules_with_gene_exp_diff(
         difference_gene_exp_batched = torch.repeat_interleave(
             difference_gene_exp_batched, num_rand_vectors_required, dim=0
         )
-        random_vectors = random_vectors.repeat(possible_pairs.shape[0], 1)
+        difference_gene_exp_batched = difference_gene_exp_batched[:num_samples, :]
+        # random_vectors = random_vectors.repeat(possible_pairs.shape[0], 1)
+        # print(difference_gene_exp_batched.size())
 
     else:
         num_rand_vectors_required = num_samples
@@ -82,14 +85,14 @@ def generate_similar_molecules_with_gene_exp_diff(
         difference_gene_exp_batched = torch.tensor(
             difference_gene_exp_batched[:num_samples, :], device=device
         )
-        random_vectors = torch.randn(
-            num_rand_vectors_required, rand_vect_dim, device=device
-        )
+        # random_vectors = torch.randn(
+        #     num_rand_vectors_required, rand_vect_dim, device=device
+        # )
 
     dose_batched = (
         torch.from_numpy(
             np.repeat(
-                dataset._experiment_idx_to_dose[original_idx], (random_vectors.shape[0])
+                dataset._experiment_idx_to_dose[original_idx], num_samples
             )
         )
         .float()
@@ -234,8 +237,17 @@ dataset = LincsDataset(
     lincs_csv_file_path="/data/ongh0068/l1000/l1000_biaae/lincs/experiments_filtered.csv",
 )
 
+parser = argparse.ArgumentParser()
+parser.add_argument("-m", "--model_type", type=str, choices=["vae", "aae", "wae", "test"])
+parser.add_argument("-b", "--bind_exp", action="store_true", default=False, help="add this flag to run the binding experiment")
+parser.add_argument("-d", "--device", type=str, default="cuda:0")
+args = parser.parse_args()
+
 # test_set = pd.read_csv("/data/ongh0068/l1000/l1000_biaae/INPUT_DIR/test.csv")
-test_set = pd.read_csv("filtered_test_set.csv")
+if args.bind_exp:
+    test_set = pd.read_csv("../binding_affinity/binding_eval_experiments.csv")
+else:
+    test_set = pd.read_csv("filtered_test_set.csv")
 test_set = test_set.apply(lambda x: sanitise(x), axis=1)
 
 
@@ -246,14 +258,11 @@ original_idxes = test_set.original_idx.to_list()
 
 # Run this script with the following command:
 # Add CUDA_VISIBLE_DEVICES explicitly to avoid creating tensors on disjunct GPUs
-# CUDA_VISIBLE_DEVICES=0 python evaluate_ldm_l1000_metrics.py -d cuda -m vae
-# CUDA_VISIBLE_DEVICES=0 python evaluate_ldm_l1000_metrics.py -d cuda -m aae
-# CUDA_VISIBLE_DEVICES=0 python evaluate_ldm_l1000_metrics.py -d cuda -m wae
+# CUDA_VISIBLE_DEVICES=0 python evaluate_ldm_l1000_metrics.py -d cuda -m vae -b (add -b flag to run binding experiment)
+# CUDA_VISIBLE_DEVICES=0 python evaluate_ldm_l1000_metrics.py -d cuda -m aae -b (add -b flag to run binding experiment)
+# CUDA_VISIBLE_DEVICES=0 python evaluate_ldm_l1000_metrics.py -d cuda -m wae -b (add -b flag to run binding experiment)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-m", "--model_type", type=str, choices=["vae", "aae", "wae", "test"])
-parser.add_argument("-d", "--device", type=str, default="cuda:0")
-args = parser.parse_args()
+
 # if args.model_type == "vae":
 #     config_file = "config/ldm_con+vae_uncon.yml"
 #     # ckpt_file = "tmp_logs/2023-05-08_13_39_31.158242/epoch=47-val_loss=0.12.ckpt"
@@ -280,22 +289,34 @@ if args.model_type == "vae":
     # ckpt_file = "tmp_logs/2023-05-08_13_39_31.158242/epoch=47-val_loss=0.12.ckpt"
     # ckpt_file = "lightning_logs/2023-05-07_13_34_19.194735/epoch=99-val_loss=0.14.ckpt"
     ckpt_file = "lightning_logs/2023-05-12_18_20_25.013834/l1000_ldm_con+vae_con_2023-05-12_18_20_25.013834/epoch=19-val_loss=0.31.ckpt"
-    output_file = "cond_generation_res/ldm_con_vae_generated_molecules_and_sa_scores.pkl"
-    mol_file = "cond_generation_res/ldm_con_vae_test_set_smile_to_max_sim_generated_molecule.pkl"
+    if args.bind_exp:
+        output_file = "../binding_affinity/cond_generation_res/ldm_con_vae_generated_molecules_and_sa_scores.pkl"
+        mol_file = "../binding_affinity/cond_generation_res/ldm_con_vae_test_set_smile_to_max_sim_generated_molecule.pkl"
+    else:
+        output_file = "cond_generation_res/ldm_con_vae_generated_molecules_and_sa_scores.pkl"
+        mol_file = "cond_generation_res/ldm_con_vae_test_set_smile_to_max_sim_generated_molecule.pkl"
 elif args.model_type == "aae":
     config_file = "config/ldm_con+aae_con.yml"
     # ckpt_file = "tmp_logs/2023-05-08_13_39_25.455320/epoch=47-val_loss=0.11.ckpt"
     # ckpt_file = "lightning_logs/2023-05-07_13_23_22.866645/epoch=95-val_loss=0.20.ckpt"
     ckpt_file = "lightning_logs/2023-05-12_18_20_27.525874/l1000_ldm_con+aae_con_2023-05-12_18_20_27.525874/epoch=20-val_loss=0.36.ckpt"
-    output_file = "cond_generation_res/ldm_con_aae_generated_molecules_and_sa_scores.pkl"
-    mol_file = "cond_generation_res/ldm_con_aae_test_set_smile_to_max_sim_generated_molecule.pkl"
+    if args.bind_exp:
+        output_file = "../binding_affinity/cond_generation_res/ldm_con_aae_generated_molecules_and_sa_scores.pkl"
+        mol_file = "../binding_affinity/cond_generation_res/ldm_con_aae_test_set_smile_to_max_sim_generated_molecule.pkl"
+    else:
+        output_file = "cond_generation_res/ldm_con_aae_generated_molecules_and_sa_scores.pkl"
+        mol_file = "cond_generation_res/ldm_con_aae_test_set_smile_to_max_sim_generated_molecule.pkl"
 elif args.model_type == "wae":
     config_file = "config/ldm_con+wae_con.yml"
     # ckpt_file = "tmp_logs/2023-05-08_13_39_19.133896/epoch=46-val_loss=0.13.ckpt"
     # ckpt_file = "lightning_logs/2023-05-07_13_23_05.773620/epoch=97-val_loss=0.09.ckpt"
     ckpt_file = "lightning_logs/2023-05-12_18_20_29.796081/l1000_ldm_con+wae_con_2023-05-12_18_20_29.796081/epoch=33-val_loss=0.19.ckpt"
-    output_file = "cond_generation_res/ldm_con_wae_generated_molecules_and_sa_scores.pkl"
-    mol_file = "cond_generation_res/ldm_con_wae_test_set_smile_to_max_sim_generated_molecule.pkl"
+    if args.bind_exp:
+        output_file = "../binding_affinity/cond_generation_res/ldm_con_wae_generated_molecules_and_sa_scores.pkl"
+        mol_file = "../binding_affinity/cond_generation_res/ldm_con_wae_test_set_smile_to_max_sim_generated_molecule.pkl"
+    else:
+        output_file = "cond_generation_res/ldm_con_wae_generated_molecules_and_sa_scores.pkl"
+        mol_file = "cond_generation_res/ldm_con_wae_test_set_smile_to_max_sim_generated_molecule.pkl"
 elif args.model_type == "test":
     config_file = "config/ldm_con+vae_con.yml"
     # ckpt_file = "tmp_logs/2023-05-08_13_39_31.158242/epoch=47-val_loss=0.12.ckpt"
@@ -319,6 +340,8 @@ device = torch.device(args.device)
 # print("device: ", device)
 if args.model_type == "aae" or args.model_type == "wae":
     first_stage_params["gene_exp_condition_mlp"]["input_feature_dim"] = 832 + 978 + 1
+elif args.model_type == "vae":
+    first_stage_params["gene_exp_condition_mlp"]["input_feature_dim"] = 512 + 978 + 1
 
 ckpt = torch.load(ckpt_file, map_location = device)
 ldm_model = LatentDiffusion(
