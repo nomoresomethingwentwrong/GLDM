@@ -6,7 +6,7 @@ from model_utils import get_params
 from pytorch_lightning import Trainer
 from torch.utils.data import ConcatDataset
 from datetime import datetime
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, Timer
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
 import argparse
@@ -204,8 +204,9 @@ if __name__ == "__main__":
 
     # Callbacks
     lr_monitor = LearningRateMonitor(logging_interval="step")
-    tensorboard_logger = TensorBoardLogger(save_dir=f"../{now}", name=f"logs_{now}")
+    tensorboard_logger = TensorBoardLogger(save_dir=f"lightning_logs/{now}", name=f"logs_{now}")
     early_stopping = EarlyStopping(monitor="val_loss", patience=3)
+    timer = Timer(duration="00:12:00:00")   # 12 hours (for training one epoch to check training speed)
     if model_architecture == "vae":
         checkpoint_callback = ModelCheckpoint(
             save_top_k=1,
@@ -225,13 +226,13 @@ if __name__ == "__main__":
         )
 
     callbacks = (
-        [checkpoint_callback, lr_monitor, early_stopping]
+        [checkpoint_callback, lr_monitor, early_stopping, timer]
         if model_architecture == "vae"
-        else [checkpoint_callback, lr_monitor]
+        else [checkpoint_callback, lr_monitor, timer]
     )
     trainer = Trainer(
         accelerator="gpu",
-        max_epochs=30,
+        max_epochs=1, # 30,
         devices=[3],
         callbacks=callbacks,
         logger=tensorboard_logger,
@@ -244,6 +245,8 @@ if __name__ == "__main__":
         train_dataloaders=train_dataloader,
         val_dataloaders=valid_dataloader,
     )
+
+    print("time for training one epoch: ", timer.time_elapsed("train"))
 
     # train_processed_file_metadata = (
     #     f"/data/ongh0068/l1000/pyg_output_playground/{train_split}/processed_file_paths.csv"
