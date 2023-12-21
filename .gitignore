@@ -4,7 +4,7 @@ __pycache__
 ldm/lightning_logs
 ldm/.ipynb_checkpoints
 ldm/__pycache__
-ldm/cond_generation_res
+ldm/generation_res
 ldm/tmp_logs
 binding_affinity/.ipynb_checkpoints
 binding_affinity/cond_generation_res
