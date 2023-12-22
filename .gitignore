@@ -7,7 +7,7 @@ ldm/__pycache__
 ldm/generation_res
 ldm/tmp_logs
 binding_affinity/.ipynb_checkpoints
-binding_affinity/cond_generation_res
+binding_affinity/generation_res
 binding_affinity/default_conformer
 binding_affinity/excape_experiments
 binding_affinity/ligand
