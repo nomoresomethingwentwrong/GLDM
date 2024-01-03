@@ -1,0 +1,160 @@
+batch_size: 1
+include_predict_gene_exp_mlp: false
+num_train_batches: 2209
+params:
+  decode_on_validation_end: true
+  decoder:
+    attachment_point_selector:
+      dropout_prob: 0.0
+      hidden_layer_dims:
+      - 128
+      - 64
+      - 32
+      input_feature_dim: 2176
+      output_size: 1
+    edge_candidate_scorer:
+      dropout_prob: 0.0
+      hidden_layer_dims:
+      - 128
+      - 64
+      - 32
+      input_feature_dim: 3011
+      output_size: 1
+    edge_type_selector:
+      dropout_prob: 0.0
+      hidden_layer_dims:
+      - 128
+      - 64
+      - 32
+      input_feature_dim: 3011
+      output_size: 3
+    first_node_type_selector:
+      dropout_prob: 0.0
+      hidden_layer_dims:
+      - 256
+      - 256
+      input_feature_dim: 512
+      output_size: 166
+    no_more_edges_repr: !!python/tuple
+    - 1
+    - 835
+    node_type_loss_weights: !!python/object/apply:torch._utils._rebuild_tensor_v2
+    - !!python/object/apply:torch.storage._load_from_bytes
+      - !!binary |
+        gAKKCmz8nEb5IGqoUBkugAJN6QMugAJ9cQAoWBAAAABwcm90b2NvbF92ZXJzaW9ucQFN6QNYDQAA
+        AGxpdHRsZV9lbmRpYW5xAohYCgAAAHR5cGVfc2l6ZXNxA31xBChYBQAAAHNob3J0cQVLAlgDAAAA
+        aW50cQZLBFgEAAAAbG9uZ3EHSwR1dS6AAihYBwAAAHN0b3JhZ2VxAGN0b3JjaApGbG9hdFN0b3Jh
+        Z2UKcQFYCQAAADI2Nzg3Mjg0OHECWAMAAABjcHVxA0unTnRxBFEugAJdcQBYCQAAADI2Nzg3Mjg0
+        OHEBYS6nAAAAAAAAAAAAIEHNzMw9hX5mQM3MzD3NzMw9eEjjPl5DQT9oHeI+AAAgQQ/QMkBXD1lA
+        AAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEA
+        ACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAA
+        IEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAg
+        QQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBB
+        AAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEA
+        ACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAA
+        IEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAg
+        QQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBB
+        AAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEA
+        ACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAA
+        IEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEEAACBBAAAgQQAAIEH7ODE+
+    - 0
+    - !!python/tuple
+      - 167
+    - !!python/tuple
+      - 1
+    - false
+    - !!python/object/apply:collections.OrderedDict
+      - []
+    node_type_selector:
+      input_feature_dim: 1344
+      output_size: 167
+    use_node_type_loss_weights: true
+  discriminator:
+    hidden_layer_dims:
+    - 256
+    - 128
+    - 64
+    input_feature_dim: 512
+    output_size: 1
+  full_graph_encoder:
+    aggr_layer_type: MoLeRAggregation
+    atom_or_motif_vocab_size: 166
+    input_feature_dim: 59
+    layer_type: FiLMConv
+    total_num_moler_aggr_heads: 32
+  gene_exp_condition_mlp:
+    hidden_layer_dims: []
+    input_feature_dim: 1491
+    output_size: 512
+    use_bias: false
+  gene_exp_prediction_mlp:
+    dropout_prob: 0.0
+    hidden_layer_dims:
+    - 768
+    input_feature_dim: 512
+    loss_weight_factor: 0.33
+    output_size: 978
+  graph_properties:
+    clogp:
+      mlp:
+        dropout_prob: 0.0
+        hidden_layer_dims:
+        - 64
+        - 32
+        input_feature_dim: 512
+        loss_weight_factor: 0.33
+        output_size: 1
+      normalise_loss: true
+      type: regression
+    mol_weight:
+      mlp:
+        dropout_prob: 0.0
+        hidden_layer_dims:
+        - 64
+        - 32
+        input_feature_dim: 512
+        loss_weight_factor: 0.33
+        output_size: 1
+      normalise_loss: true
+      type: regression
+    sa_score:
+      mlp:
+        dropout_prob: 0.0
+        hidden_layer_dims:
+        - 64
+        - 32
+        input_feature_dim: 512
+        loss_weight_factor: 0.33
+        output_size: 1
+      normalise_loss: true
+      type: regression
+  graph_property_pred_loss_weight: 0.1
+  kl_divergence_annealing_beta: 0.999
+  kl_divergence_weight: 0.02
+  latent_repr_dim: 512
+  latent_repr_mlp:
+    hidden_layer_dims: []
+    input_feature_dim: 832
+    output_size: 512
+    use_bias: false
+  latent_repr_size: 512
+  latent_sample_strategy: per_graph
+  max_lr: 5.0e-06
+  mean_log_var_mlp:
+    hidden_layer_dims: []
+    input_feature_dim: 832
+    output_size: 1024
+    use_bias: false
+  partial_graph_encoder:
+    aggr_layer_type: MoLeRAggregation
+    atom_or_motif_vocab_size: 166
+    input_feature_dim: 59
+    layer_type: FiLMConv
+    total_num_moler_aggr_heads: 16
+  training_hyperparams:
+    div_factor: 10
+    max_lr: 0.0001
+    three_phase: true
+  use_oclr_scheduler: false
+  using_cyclical_anneal: false
+using_lincs: true
