@@ -1,5 +1,5 @@
 import sys 
-sys.path.append('/data/conghao001/diffusion_model/latent-diffusion')
+sys.path.append('ldm/')
 import torch
 from ldm.models.diffusion.ddpm import DDPM, DiffusionWrapper, disabled_train
 from ldm.models.diffusion.ddim import DDIMSampler
@@ -48,7 +48,7 @@ class LatentDiffusion(DDPM):
             
         ckpt_path = kwargs.pop("ckpt_path", None)    # this is for the diff model ckpt, not vaes
         ignore_keys = kwargs.pop("ignore_keys", [])
-        super().__init__(conditioning_key=conditioning_key, *args, **kwargs)    # DiffusionWrapper is called here
+        super().__init__(conditioning_key=conditioning_key, *args, **kwargs)    # DiffusionWrapper is called here, and the diffusion model (target in the unet config, aka the unet model) is initiated and called in the DiffusionWrapper
         self.save_hyperparameters(ignore=['dataset'])
         
         self.concat_mode = concat_mode

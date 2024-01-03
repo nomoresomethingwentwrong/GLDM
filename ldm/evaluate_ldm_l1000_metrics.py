@@ -1,6 +1,6 @@
 import os
 import sys
-sys.path.append('../')
+sys.path.append('../autoencoder/')
 from dataset import LincsDataset
 # from model import BaseModel
 # from aae import AAE

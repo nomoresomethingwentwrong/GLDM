@@ -1,5 +1,5 @@
 import sys 
-sys.path.append('/data/conghao001/diffusion_model/latent-diffusion')
+sys.path.append('ldm/')
 sys.path.append('../')
 from moler_ldm import LatentDiffusion
 import torch
