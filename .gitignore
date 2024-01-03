@@ -2,6 +2,7 @@ data
 __pycache__
 .ipynb_checkpoints/*
 first_stage_models
+first_stage_models/*
 ldm/model_ckpt
 ldm/lightning_logs
 ldm/.ipynb_checkpoints
