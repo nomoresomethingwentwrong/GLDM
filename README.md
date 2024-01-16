@@ -10,21 +10,23 @@ conda env create --file=GLDM.yml
 
 ## Training GLDM from scratch
 
+To directly use trained models, please skip and refer to next section.
 
 ### Data preprocessing
 
-We provide molecule data from GuacaMol and L1000 datasets processed by the MoLeR algorithm. If other datasets is required, please refer to [MoLeR](https://github.com/microsoft/molecule-generation) for preprocessing. 
+We provide molecule data from GuacaMol and L1000 datasets processed by the MoLeR algorithm at this [share point](https://entuedu-my.sharepoint.com/:f:/g/personal/conghao001_e_ntu_edu_sg/EoOGZKHS5J9AnEpjnPtFbRYBgGu2Jg5K_uscjKjdBXpiFQ?e=6XewlF). If other datasets is required, please refer to [MoLeR](https://github.com/microsoft/molecule-generation) for preprocessing. 
 
-Our gene expression data is downloaded from the [BiAAE repository](https://github.com/insilicomedicine/BiAAE). 
+Our gene expression data is downloaded from the [BiAAE repository](https://github.com/insilicomedicine/BiAAE). It is also available [here](https://drive.google.com/drive/folders/1cbcZZgjlV3W6D_ROVLOGX_Q6Ef-JXU3y?usp=sharing).
 
 ### Training the encoder and decoder
 
 When excuting the training scripts for the first time, additional preprocessing will be done to convert data samples into `pytorch_geometric data`. This process will take some time. 
 
 In addition, remember to change the following variables in the scripts:
-> `raw_moler_trace_dataset_parent_folder` and `output_pyg_trace_dataset_parent_folder` refer to the MoLeR processed data folder and the pytorch_geometric acceptable data folder. 
 
-> `gene_exp_controls_file_path` and `gene_exp_tumor_file_path` stores the gene expression profiles of control and treated cell lines, and `lincs_csv_file_path` stores the experiment idx. 
+> In *autoencoder/train_guacamol.py* and *autoencoder/train_l1000.py*, `raw_moler_trace_dataset_parent_folder` and `output_pyg_trace_dataset_parent_folder` refer to the MoLeR processed data folder and the pytorch_geometric acceptable data folder. Please unzip the trace directory downloaded from the share point, and put it under `raw_moler_trace_dataset_parent_folder`. The `pytorch_geometric data` will be automatically stored in `output_pyg_trace_dataset_parent_folder`. 
+
+> In *autoencoder/train_l1000.py*, `gene_exp_controls_file_path` and `gene_exp_tumor_file_path` stores the gene expression profiles of control and treated cell lines, and `lincs_csv_file_path` stores the experiment idx. Please put `robust_normalized_controls.npz` under `gene_exp_controls_file_path`, put `robust_normalized_tumors.npz` under `gene_exp_tumor_file_path`, and put `experiments_filtered.csv` under `lincs_csv_file_path`.
 
 #### Training unconstrained model on GuacaMol dataset
 
@@ -63,7 +65,7 @@ python train_l1000.py \
 
 ### Training the latent diffusion model
 
-Make sure the encoder model is developed before proceeding to train the latent diffusion model. Configure the path to the encoder model checkpoint in `config_file`. 
+Make sure the encoder model is developed before proceeding to train the latent diffusion model. Configure the path to the encoder model checkpoint in `config_file`. Also remember to change the path variables likely to training the encoder and decoder.
 
 #### Training unconstrained model on GuacaMol dataset
 
@@ -83,7 +85,7 @@ python train_ldm_guacamol.py \
 #### Training constrained model on L1000 dataset
 
 ```
-python train_ldm_guacamol.py \
+python train_ldm_l1000.py \
     --layer_type=FiLMConv \
     --model_architecture=aae \
     --use_oclr_scheduler \
@@ -96,7 +98,7 @@ python train_ldm_guacamol.py \
 
 ## Sample hit molecules
 
-Please refer to *ldm/sample_ldm.ipynb* for sampling from developed models.
+Please download the trained models from [Zenodo](https://zenodo.org/records/10456911?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6IjZjZmJlOWY5LTQ1MTUtNGJmZi1iZDAyLWE3NTA0OTc2M2FkMiIsImRhdGEiOnt9LCJyYW5kb20iOiIyZmI1NDhkNGY0ODIwNDFkN2E0MzIwMDFhZWFlZWE0MyJ9.Ep28OUkeVm5ksE5n0NgVSucdOpRiBnyKRuKXr4Is2-_3vS2vDI-DfbH-tczvF6EPlPmJ6Tx8qvgdAMKKkaiLJw) and refer to *ldm/sample_ldm.ipynb* for sampling from developed models.
 
 ## Evaluations
 

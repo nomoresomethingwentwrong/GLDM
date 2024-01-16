@@ -1,14 +1,12 @@
 data
 __pycache__
 .ipynb_checkpoints/*
-first_stage_models
-first_stage_models/*
-ldm/model_ckpt
 ldm/lightning_logs
 ldm/.ipynb_checkpoints
 ldm/__pycache__
 ldm/generation_res
 ldm/tmp_logs
+ldm/model_ckpt
 binding_affinity/.ipynb_checkpoints
 binding_affinity/generation_res
 binding_affinity/default_conformer
