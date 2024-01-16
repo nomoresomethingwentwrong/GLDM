@@ -7,10 +7,11 @@ Create the GLDM conda environment with the config file `GLDM.yml`
 conda env create --file=GLDM.yml
 ```
 
+---
 
 ## Training GLDM from scratch
 
-To directly use trained models, please skip and refer to next section.
+To directly use trained models, please skip and refer to [next section](#sample-hit-molecules).
 
 ### Data preprocessing
 
@@ -65,7 +66,7 @@ python train_l1000.py \
 
 ### Training the latent diffusion model
 
-Make sure the encoder model is developed before proceeding to train the latent diffusion model. Configure the path to the encoder model checkpoint in `config_file`. Also remember to change the path variables likely to training the encoder and decoder.
+Make sure the encoder model is developed before proceeding to train the latent diffusion model. Configure the path to the encoder model checkpoint in `config_file`. Also remember to change the path variables likely to [training the encoder and decoder](#training-the-encoder-and-decoder).
 
 #### Training unconstrained model on GuacaMol dataset
 
@@ -96,9 +97,13 @@ python train_ldm_l1000.py \
     --config_file=config/ldm_con+wae_con.yml
 ```
 
+---
+
 ## Sample hit molecules
 
 Please download the trained models from [Zenodo](https://zenodo.org/records/10456911?token=eyJhbGciOiJIUzUxMiJ9.eyJpZCI6IjZjZmJlOWY5LTQ1MTUtNGJmZi1iZDAyLWE3NTA0OTc2M2FkMiIsImRhdGEiOnt9LCJyYW5kb20iOiIyZmI1NDhkNGY0ODIwNDFkN2E0MzIwMDFhZWFlZWE0MyJ9.Ep28OUkeVm5ksE5n0NgVSucdOpRiBnyKRuKXr4Is2-_3vS2vDI-DfbH-tczvF6EPlPmJ6Tx8qvgdAMKKkaiLJw) and refer to *ldm/sample_ldm.ipynb* for sampling from developed models.
+
+---
 
 ## Evaluations
 
