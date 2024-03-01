@@ -1,15 +1,9 @@
 import sys 
 sys.path.append('ldm/')
 sys.path.append('../')
-from moler_ldm import LatentDiffusion
 import torch
-from dataset import LincsDataset
-from torch_geometric.loader import DataLoader
-from omegaconf import OmegaConf
-from model_utils import get_params
-from tqdm import tqdm
-from ldm.models.diffusion.ddim import DDIMSampler
-from ldm.modules.diffusionmodules.util import make_ddim_sampling_parameters, make_ddim_timesteps, noise_like
+from .ldm.models.diffusion.ddim import DDIMSampler
+from .ldm.modules.diffusionmodules.util import make_ddim_sampling_parameters, make_ddim_timesteps, noise_like
 
 
 class MolSampler(DDIMSampler):
@@ -57,7 +51,7 @@ class MolSampler(DDIMSampler):
         C, H = shape    # our latent repr is 1d
         size = (batch_size, C, H)
         
-        print(f'Data shape for DDIM sampling is {size}, eta {eta}')
+        # print(f'Data shape for DDIM sampling is {size}, eta {eta}')
 
         samples, intermediates = self.ddim_sampling(conditioning, size,
                                                     callback=callback,

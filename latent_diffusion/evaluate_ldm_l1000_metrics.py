@@ -13,8 +13,8 @@ import pandas as pd
 from rdkit import RDLogger
 import pickle
 from l1000_evaluation_utils import compute_max_similarity
-from ldm.moler_ldm import LatentDiffusion
-from ldm.DDIM import MolSampler
+from .moler_ldm import LatentDiffusion
+from .DDIM import MolSampler
 from omegaconf import OmegaConf
 import argparse
 

@@ -18,9 +18,9 @@ from torchvision import transforms
 
 
 sys.path.append("./moler_reference")
-from molecule_generation.utils.training_utils import get_class_balancing_weights
+from ..moler_reference.molecule_generation.utils.training_utils import get_class_balancing_weights
 
-from molecule_generation.utils.moler_decoding_utils import (
+from ..moler_reference.molecule_generation.utils.moler_decoding_utils import (
     restrict_to_beam_size_per_mol,
     MoLeRDecoderState,
     MoleculeGenerationAtomChoiceInfo,

@@ -1,4 +1,4 @@
-from torch_geometric.data import Dataset, Data, Batch
+from torch_geometric.data import Dataset, InMemoryDataset, Data, Batch
 import os
 import pandas as pd
 import numpy as np
@@ -968,3 +968,72 @@ class LincsDataset(MolerDataset):
         data.gene_expressions = torch.from_numpy(diff_gene_exp).float()
         data.dose = torch.from_numpy(self._experiment_idx_to_dose[experiment_idx]).float()
         return data
+
+
+class DummyDataset(InMemoryDataset):
+    def __init__(self, metadata, transform=None, pre_transform=None):
+        self._transform = transform
+        self._pre_transform = pre_transform
+        self._metadata = metadata
+        
+        self.load_metadata()
+        super(DummyDataset, self).__init__('.', transform, pre_transform)
+        self.data, slices = self.process()
+        
+    @property
+    def raw_file_names(self):
+        return []
+
+    @property
+    def processed_file_names(self):
+        return ['data.pt']
+        
+    @property
+    def metadata(self):
+        return self._metadata
+    
+    @property
+    def node_type_index_to_string(self):
+        return self._node_type_index_to_string
+
+    @property
+    def num_node_types(self):
+        return len(self.node_type_index_to_string)
+    
+    def process(self):
+        '''
+            To load the parameters for model input dim, create a simple data sample with 3 nodes and 4 edges.
+        '''
+        edge_index = torch.tensor([[0, 1, 2, 0], [1, 0, 1, 2]], dtype=torch.long)
+        x = torch.randn(3, 59)  # Node features.
+        y = torch.tensor([0], dtype=torch.long)  # Graph label.
+
+        data = Data(x=x, edge_index=edge_index, y=y)
+
+        data_list = [data]
+
+        # Directly return the collate output without saving.
+        return self.collate(data_list)
+    
+    def load_metadata(self):
+        self._atom_type_featuriser = next(
+            featuriser
+            for featuriser in self._metadata["feature_extractors"]
+            if featuriser.name == "AtomType"
+        )
+
+        self._node_type_index_to_string = (
+            self._atom_type_featuriser.index_to_atom_type_map.copy()
+        )
+        self._motif_vocabulary = self.metadata.get("motif_vocabulary")
+
+        if self._motif_vocabulary is not None:
+            self._motif_to_node_type_index = get_motif_type_to_node_type_index_map(
+                motif_vocabulary=self._motif_vocabulary,
+                num_atom_types=len(self._node_type_index_to_string),
+            )
+
+            for motif, node_type in self._motif_to_node_type_index.items():
+                self._node_type_index_to_string[node_type] = motif
+        else:
+            self._motif_to_node_type_index = {}

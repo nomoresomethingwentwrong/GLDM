@@ -6,9 +6,9 @@ sys.path.append('moler_reference')
 sys.path.append('ldm')
 from guacamol.assess_distribution_learning import assess_distribution_learning, _assess_distribution_learning
 from guacamol.utils.helpers import setup_default_logger
-from evaluation_utils import MoLeRGenerator, LDMGenerator
-from ldm.moler_ldm import LatentDiffusion
-from ldm.DDIM import MolSampler
+from latent_diffusion.evaluation_utils import MoLeRGenerator, LDMGenerator
+from latent_diffusion.moler_ldm import LatentDiffusion
+from latent_diffusion.DDIM import MolSampler
 from omegaconf import OmegaConf
 
 

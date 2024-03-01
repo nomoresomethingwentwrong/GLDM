@@ -6,8 +6,8 @@ sys.path.append('../autoencoder/')
 from guacamol.distribution_matching_generator import DistributionMatchingGenerator
 from model import BaseModel
 from aae import AAE
-from ldm.moler_ldm import LatentDiffusion
-from ldm.DDIM import MolSampler
+from .moler_ldm import LatentDiffusion
+from .DDIM import MolSampler
 from omegaconf import OmegaConf
 from model_utils import get_params
 from dataset import MolerDataset

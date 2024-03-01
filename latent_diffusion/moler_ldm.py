@@ -1,9 +1,9 @@
 import sys 
 sys.path.append('ldm/')
 import torch
-from ldm.models.diffusion.ddpm import DDPM, DiffusionWrapper, disabled_train
-from ldm.models.diffusion.ddim import DDIMSampler
-from ldm.util import log_txt_as_img, exists, default, ismap, isimage, mean_flat, count_params, instantiate_from_config, get_obj_from_str
+from .ldm.models.diffusion.ddpm import DDPM, DiffusionWrapper, disabled_train
+from .ldm.models.diffusion.ddim import DDIMSampler
+from .ldm.util import log_txt_as_img, exists, default, ismap, isimage, mean_flat, count_params, instantiate_from_config, get_obj_from_str
 from torch.optim.lr_scheduler import LambdaLR
 from pytorch_lightning.utilities import rank_zero_only
 import numpy as np

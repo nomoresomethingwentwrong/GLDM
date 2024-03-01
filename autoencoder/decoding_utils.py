@@ -4,13 +4,13 @@ from rdkit import Chem
 import sys
 sys.path.append("../moler_reference")
 
-from molecule_generation.chem.molecule_dataset_utils import BOND_DICT
-from molecule_generation.chem.motif_utils import (
+from ..moler_reference.molecule_generation.chem.molecule_dataset_utils import BOND_DICT
+from ..moler_reference.molecule_generation.chem.motif_utils import (
     find_motifs_from_vocabulary,
 )
-from molecule_generation.chem.rdkit_helpers import compute_canonical_atom_order, get_atom_symbol
+from ..moler_reference.molecule_generation.chem.rdkit_helpers import compute_canonical_atom_order, get_atom_symbol
 
-from molecule_generation.utils.moler_decoding_utils import (
+from ..moler_reference.molecule_generation.utils.moler_decoding_utils import (
     MoLeRDecoderState,
 )
 from torch_geometric.data import Batch

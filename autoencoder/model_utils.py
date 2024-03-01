@@ -13,12 +13,12 @@ from torch_geometric.nn import aggr
 from dataclasses import dataclass
 import sys
 from enum import Enum, auto
-from utils import unsorted_segment_softmax
+from .utils import unsorted_segment_softmax
 from torch_geometric.utils import scatter
 
 sys.path.append("../moler_reference")
 
-from molecule_generation.utils.training_utils import get_class_balancing_weights
+from ..moler_reference.molecule_generation.utils.training_utils import get_class_balancing_weights
 
 
 @dataclass
@@ -595,14 +595,14 @@ def _get_encoder_layers(
 def get_params(dataset):
     return {
         "full_graph_encoder": {
-            "input_feature_dim": dataset[0].x.shape[-1],
+            "input_feature_dim": 59,    # dataset[0].x.shape[-1],
             "atom_or_motif_vocab_size": len(dataset.node_type_index_to_string),
             "aggr_layer_type": "MoLeRAggregation",
             "total_num_moler_aggr_heads": 32,
             "layer_type": "FiLMConv",
         },
         "partial_graph_encoder": {
-            "input_feature_dim": dataset[0].x.shape[-1],
+            "input_feature_dim": 59,    # dataset[0].x.shape[-1],
             "atom_or_motif_vocab_size": len(dataset.node_type_index_to_string),
             "aggr_layer_type": "MoLeRAggregation",
             "total_num_moler_aggr_heads": 16,
