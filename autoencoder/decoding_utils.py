@@ -14,9 +14,9 @@ from ..moler_reference.molecule_generation.utils.moler_decoding_utils import (
     MoLeRDecoderState,
 )
 from torch_geometric.data import Batch
-from dataset import MolerData
+from .dataset import MolerData
 import torch
-from dataset import EdgeRepresentation
+from .dataset import EdgeRepresentation
 
 def construct_decoder_states(
     motif_vocabulary, 

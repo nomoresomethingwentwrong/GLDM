@@ -1,6 +1,6 @@
-from model_utils import GenericGraphEncoder
+from .model_utils import GenericGraphEncoder
 import torch
-from model_utils import LayerType, AggrLayerType
+from .model_utils import LayerType, AggrLayerType
 
 
 class GraphEncoder(torch.nn.Module):

@@ -1,15 +1,15 @@
 import sys
 import itertools
 from pytorch_lightning import LightningModule
-from model_utils import GenericMLP, MoLeROutput, PropertyRegressionMLP
-from encoder import GraphEncoder, PartialGraphEncoder
+from .model_utils import GenericMLP, MoLeROutput, PropertyRegressionMLP
+from .encoder import GraphEncoder, PartialGraphEncoder
 from rdkit.Chem import Draw
 from rdkit import Chem
-from decoder import MLPDecoder
+from .decoder import MLPDecoder
 import torch
 import numpy as np
-from utils import BIG_NUMBER, pprint_pyg_obj
-from decoding_utils import (
+from .utils import BIG_NUMBER, pprint_pyg_obj
+from .decoding_utils import (
     construct_decoder_states,
     sample_indices_from_logprobs,
     batch_decoder_states,

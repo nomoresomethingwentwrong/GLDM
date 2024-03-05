@@ -1,7 +1,7 @@
-from model import AbstractModel
-from model_utils import GenericMLP, MoLeROutput, PropertyRegressionMLP, DiscriminatorMLP
-from encoder import GraphEncoder, PartialGraphEncoder
-from decoder import MLPDecoder
+from .model import AbstractModel
+from .model_utils import GenericMLP, MoLeROutput, PropertyRegressionMLP, DiscriminatorMLP
+from .encoder import GraphEncoder, PartialGraphEncoder
+from .decoder import MLPDecoder
 import torch
 from rdkit import Chem
 from rdkit.Chem import Draw

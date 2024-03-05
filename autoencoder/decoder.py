@@ -1,10 +1,10 @@
 import torch
-from utils import (
+from .utils import (
     safe_divide_loss,
     compute_neglogprob_for_multihot_objective,
     traced_unsorted_segment_log_softmax,
 )
-from model_utils import GenericMLP
+from .model_utils import GenericMLP
 import torch.nn.functional as F
 
 distance_truncation = 10
